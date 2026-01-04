@@ -139,6 +139,7 @@ static SBC_BCDEHL_OR_0_RE: LazyLock<Regex> =
 static ADC_HBD_OR_0_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^adc (?:[hbd]|[%\$&]?0+$)").unwrap());
 static LD_HBD_A_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^ld [hbd], a").unwrap());
+static LD_HBD_0_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^ld [hbd], [%\$&]?0+$").unwrap());
 
 static LD_PAIR_IMM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^ld (?:hl|bc|de), [^\[]").unwrap());
@@ -183,6 +184,10 @@ static CP_1_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^cp [%\$&]?0*1$"
 
 static JR_NZ_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(jr|jp|jmp) nz,").unwrap());
 static LD_ANY_0_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^ld .+, [%\$&]?0+$").unwrap());
+static LD_BCDE_IMM_NOT_HBD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^ld (?:bc|de), [^hbd]").unwrap());
+static LD_ANY_IMM_NOT_REG_OR_MEM_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^ld .+, [^afbcdehl\[]").unwrap());
 
 static PREFIX_A_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:rl|rlc|rr|rrc) a$").unwrap());
@@ -477,10 +482,7 @@ fn cond_pair_eq_a_mul_16_add(line: &Line, prev: &[Line]) -> bool {
 }
 
 fn cond_pair_eq_a_mul_16_step2(line: &Line, prev: &[Line]) -> bool {
-    let ok = (LD_LCE_A_RE.is_match(&line.code)
-        || Regex::new(r"^ld [hbd], [%\$&]?0+$")
-            .unwrap()
-            .is_match(&line.code))
+    let ok = (LD_LCE_A_RE.is_match(&line.code) || LD_HBD_0_RE.is_match(&line.code))
         && line.code != prev[0].code;
     if !ok {
         return false;
@@ -889,10 +891,7 @@ pub(crate) fn steps(builtin: &str) -> Option<Vec<PatternStep>> {
         ]),
         "py_pair_eq_a_mul_16" => Some(vec![
             PatternStep::new(|line, _| {
-                LD_LCE_A_RE.is_match(&line.code)
-                    || Regex::new(r"^ld [hbd], [%\$&]?0+$")
-                        .unwrap()
-                        .is_match(&line.code)
+                LD_LCE_A_RE.is_match(&line.code) || LD_HBD_0_RE.is_match(&line.code)
             }),
             PatternStep::new(cond_pair_eq_a_mul_16_step2),
             PatternStep::new(cond_pair_eq_a_mul_16_add),
@@ -902,10 +901,7 @@ pub(crate) fn steps(builtin: &str) -> Option<Vec<PatternStep>> {
         ]),
         "py_pair_eq_a_mul_16_rept" => Some(vec![
             PatternStep::new(|line, _| {
-                LD_LCE_A_RE.is_match(&line.code)
-                    || Regex::new(r"^ld [hbd], [%\$&]?0+$")
-                        .unwrap()
-                        .is_match(&line.code)
+                LD_LCE_A_RE.is_match(&line.code) || LD_HBD_0_RE.is_match(&line.code)
             }),
             PatternStep::new(cond_pair_eq_a_mul_16_step2),
             PatternStep::new(|line, _| line.code.eq_ignore_ascii_case("rept 4")),
@@ -1009,11 +1005,7 @@ pub(crate) fn steps(builtin: &str) -> Option<Vec<PatternStep>> {
             PatternStep::new(|line, prev| cond_jump_target_label(line, prev, 0)),
         ]),
         "py_call_hl" => Some(vec![
-            PatternStep::new(|line, _| {
-                Regex::new(r"^ld (?:bc|de), [^hbd]")
-                    .unwrap()
-                    .is_match(&line.code)
-            }),
+            PatternStep::new(|line, _| LD_BCDE_IMM_NOT_HBD_RE.is_match(&line.code)),
             PatternStep::new(cond_call_hl_step2),
             PatternStep::new(|line, _| line.code == "jp hl"),
             PatternStep::new(|line, prev| {
@@ -1063,11 +1055,7 @@ pub(crate) fn steps(builtin: &str) -> Option<Vec<PatternStep>> {
             PatternStep::regex(&AFFECTS_ZC_RE),
         ]),
         "py_redundant_inc_dec" => Some(vec![
-            PatternStep::new(|line, _| {
-                Regex::new(r"^ld .+, [^afbcdehl\[]")
-                    .unwrap()
-                    .is_match(&line.code)
-            }),
+            PatternStep::new(|line, _| LD_ANY_IMM_NOT_REG_OR_MEM_RE.is_match(&line.code)),
             PatternStep::new(cond_redundant_inc_dec_step2),
         ]),
         "py_pair_eq_n_then_other_then_add" => Some(vec![

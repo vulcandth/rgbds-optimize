@@ -5,6 +5,8 @@ use crate::{
     Line, MatchInstance, PatternStep,
 };
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PatternPack {
@@ -119,7 +121,7 @@ pub fn run_pack_on_lines(
             continue;
         }
         if let Some(steps) = builtin_pattern_steps(&pat.builtin) {
-            let matches = find_pattern_instances(filename, lines, &pat.name, &steps);
+            let matches = find_pattern_instances(filename, lines, &pat.name, steps);
             if !matches.is_empty() {
                 out.push((pat.name.clone(), matches));
             }
@@ -129,8 +131,17 @@ pub fn run_pack_on_lines(
     out
 }
 
-fn builtin_pattern_steps(builtin: &str) -> Option<Vec<PatternStep>> {
-    match builtin {
+fn builtin_pattern_steps(builtin: &str) -> Option<&'static [PatternStep]> {
+    static CACHE: LazyLock<Mutex<HashMap<String, &'static [PatternStep]>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    if let Ok(cache) = CACHE.lock() {
+        if let Some(hit) = cache.get(builtin).copied() {
+            return Some(hit);
+        }
+    }
+
+    let steps: Vec<PatternStep> = match builtin {
         // Example: ld b, b (or other identical registers)
         "no_op_ld" => Some(vec![PatternStep::new(|line, _prev| {
             let Some(ins) = parse_instruction(&line.code) else {
@@ -180,6 +191,14 @@ fn builtin_pattern_steps(builtin: &str) -> Option<Vec<PatternStep>> {
         _ => None,
     }
     .or_else(|| crate::patterns::steps(builtin))
+
+    ?;
+
+    let leaked: &'static [PatternStep] = Box::leak(steps.into_boxed_slice());
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.insert(builtin.to_string(), leaked);
+    }
+    Some(leaked)
 }
 
 #[cfg(test)]

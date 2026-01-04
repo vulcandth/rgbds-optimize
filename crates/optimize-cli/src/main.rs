@@ -4,17 +4,46 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "pprof")]
+use std::fs::File;
+
+#[derive(Debug)]
+struct Args {
+    pack_path: PathBuf,
+    input_paths: Vec<PathBuf>,
+    #[cfg(feature = "pprof")]
+    pprof_out: Option<PathBuf>,
+    #[cfg(not(feature = "pprof"))]
+    pprof_out: Option<PathBuf>,
+    #[cfg(feature = "pprof")]
+    pprof_frequency_hz: i32,
+}
+
 fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
 
-    let (pack_path, input_paths) = parse_args(args);
+    let args = parse_args(args);
 
-    let pack_contents = match fs::read_to_string(&pack_path) {
+    #[cfg(not(feature = "pprof"))]
+    if args.pprof_out.is_some() {
+        eprintln!(
+            "--pprof is not available in this build. Rebuild with: cargo run -p optimize --features pprof -- <args>"
+        );
+        std::process::exit(2);
+    }
+
+    #[cfg(feature = "pprof")]
+    let pprof_guard = args
+        .pprof_out
+        .as_ref()
+        .map(|_| pprof::ProfilerGuard::new(args.pprof_frequency_hz).unwrap());
+
+    let pack_contents = match fs::read_to_string(&args.pack_path) {
         Ok(s) => s,
         Err(err) => {
             eprintln!(
                 "Failed to read pack config {}: {}",
-                pack_path.display(),
+                args.pack_path.display(),
                 err
             );
             std::process::exit(2);
@@ -23,15 +52,19 @@ fn main() {
     let pack = match optimize_core::load_pattern_pack_toml(&pack_contents) {
         Ok(p) => p,
         Err(err) => {
-            eprintln!("Invalid pack config {}: {}", pack_path.display(), err);
+            eprintln!(
+                "Invalid pack config {}: {}",
+                args.pack_path.display(),
+                err
+            );
             std::process::exit(2);
         }
     };
 
-    let input_paths: Vec<PathBuf> = if input_paths.is_empty() {
+    let input_paths: Vec<PathBuf> = if args.input_paths.is_empty() {
         vec![PathBuf::from(".")]
     } else {
-        input_paths
+        args.input_paths
     };
 
     let mut total_count: usize = 0;
@@ -62,6 +95,30 @@ fn main() {
     }
 
     println!("Found {} instances.", total_count);
+
+    #[cfg(feature = "pprof")]
+    if let (Some(out_path), Some(guard)) = (args.pprof_out.as_ref(), pprof_guard.as_ref()) {
+        match guard.report().build() {
+            Ok(report) => {
+                let Ok(file) = File::create(out_path) else {
+                    eprintln!("Failed to write flamegraph to {}", out_path.display());
+                    std::process::exit(2);
+                };
+                if let Err(err) = report.flamegraph(file) {
+                    eprintln!(
+                        "Failed to write flamegraph to {}: {}",
+                        out_path.display(),
+                        err
+                    );
+                    std::process::exit(2);
+                }
+            }
+            Err(err) => {
+                eprintln!("Failed to build pprof report: {}", err);
+                std::process::exit(2);
+            }
+        }
+    }
 
     #[cfg(windows)]
     {
@@ -106,9 +163,13 @@ fn gather_asm_files_sorted(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn parse_args(args: Vec<OsString>) -> (PathBuf, Vec<PathBuf>) {
+fn parse_args(args: Vec<OsString>) -> Args {
     let mut pack_path: PathBuf = PathBuf::from("configs/rgbds.toml");
     let mut inputs: Vec<PathBuf> = Vec::new();
+    let mut pprof_out: Option<PathBuf> = None;
+
+    #[cfg(feature = "pprof")]
+    let mut pprof_frequency_hz: i32 = 100;
 
     let mut i = 0usize;
     while i < args.len() {
@@ -120,11 +181,36 @@ fn parse_args(args: Vec<OsString>) -> (PathBuf, Vec<PathBuf>) {
             }
         }
 
+        if args[i] == "--pprof" {
+            if let Some(v) = args.get(i + 1) {
+                pprof_out = Some(PathBuf::from(v));
+                i += 2;
+                continue;
+            }
+        }
+
+        #[cfg(feature = "pprof")]
+        if args[i] == "--pprof-frequency" {
+            if let Some(v) = args.get(i + 1).and_then(|v| v.to_str()) {
+                if let Ok(parsed) = v.parse::<i32>() {
+                    pprof_frequency_hz = parsed;
+                    i += 2;
+                    continue;
+                }
+            }
+        }
+
         inputs.push(PathBuf::from(&args[i]));
         i += 1;
     }
 
-    (pack_path, inputs)
+    Args {
+        pack_path,
+        input_paths: inputs,
+        pprof_out,
+        #[cfg(feature = "pprof")]
+        pprof_frequency_hz,
+    }
 }
 
 fn optimize_file(

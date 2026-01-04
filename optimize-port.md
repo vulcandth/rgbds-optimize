@@ -212,7 +212,12 @@ Once output parity is proven, optimize.
 - [ ] Profile hotspots (likely: regex matching, string allocations, per-line normalization).
   - Rust (Linux): `perf record -g -- cargo run --release -p optimize -- --pack configs/pret.toml <files...>`
   - Rust (nice UI): `cargo install flamegraph` then `cargo flamegraph -p optimize --root -- --pack configs/pret.toml <files...>`
+  - Rust (WSL-friendly, no system `perf` required):
+    - `cargo run --release -p optimize --features pprof -- --pack configs/pret.toml --pprof /tmp/optimize.svg --pprof-frequency 1000 <path>`
   - Python: `python3 -m cProfile -o /tmp/optimize.prof optimize.py <files...>` then `python3 -m pstats /tmp/optimize.prof`
+
+- [x] Remove accidental per-line regex compilation in Rust patterns.
+  - Outcome (pokecrystal-up, 3015 files): Rust ~1.46s vs Python ~25.8s (~17.6x faster).
 - [ ] Targeted optimizations that should not affect correctness:
 	- Pre-compile regexes once per pattern pack
 	- Avoid per-line `String` allocations where possible (use slices + indices)
