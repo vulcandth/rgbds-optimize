@@ -15,12 +15,20 @@ It is intentionally dependency-free (no hyperfine required).
 from __future__ import annotations
 
 import argparse
+import os
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
+
+
+def normalize_newlines(b: bytes) -> bytes:
+    """Normalize platform newlines for byte-for-byte parity checks."""
+
+    return b.replace(b"\r\n", b"\n")
 
 
 def gather_asm_files(paths: Sequence[Path]) -> List[Path]:
@@ -59,7 +67,18 @@ def run(cmd: Sequence[str], cwd: Path) -> Tuple[int, bytes, bytes, float]:
     """Run a command, returning (exit_code, stdout, stderr, seconds)."""
 
     start = time.perf_counter()
-    p = subprocess.run(cmd, cwd=str(cwd), capture_output=True, check=False)
+    env = {
+        **os.environ,
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
+    }
+    p = subprocess.run(
+        cmd,
+        cwd=str(cwd),
+        capture_output=True,
+        check=False,
+        env=env,
+    )
     end = time.perf_counter()
     return p.returncode, p.stdout, p.stderr, end - start
 
@@ -143,61 +162,88 @@ def main(argv: Sequence[str]) -> int:
 
     rel_files = to_relpaths(files, repo_root)
 
-    py_cmd = [args.python, "optimize.py", *rel_files]
+    fd, list_path_s = tempfile.mkstemp(
+        prefix="rgbds-optimize-filelist-", suffix=".txt", dir=str(repo_root)
+    )
+    os.close(fd)
+    list_path = Path(list_path_s)
+    try:
+        with open(list_path, "w", encoding="utf-8", newline="\n") as f:
+            for p in rel_files:
+                f.write(p)
+                f.write("\n")
 
-    cargo_args = ["cargo", "run", "--quiet", "-p", "optimize"]
-    if args.cargo_profile == "release":
-        cargo_args.append("--release")
+        py_cmd = [args.python, "optimize.py", "--file-list", str(list_path)]
 
-    rs_cmd = [
-        *cargo_args,
-        "--",
-        "--pack",
-        str(args.pack),
-        *rel_files,
-    ]
-
-    if not args.no_build:
-        build = ["cargo", "build", "-p", "optimize"]
+        cargo_args = [
+            "cargo",
+            "run",
+            "--quiet",
+            "-p",
+            "rgbds-optimize",
+            "--bin",
+            "optimize",
+        ]
         if args.cargo_profile == "release":
-            build.append("--release")
-        print("Building Rust binary...", file=sys.stderr)
-        b = subprocess.run(build, cwd=str(repo_root), check=False)
-        if b.returncode != 0:
-            return b.returncode
+            cargo_args.append("--release")
 
-    print(f"Files: {len(rel_files)}", file=sys.stderr)
+        rs_cmd = [
+            *cargo_args,
+            "--",
+            "--pack",
+            str(args.pack),
+            "--file-list",
+            str(list_path),
+        ]
 
-    def time_tool(
-        name: str, cmd: List[str]
-    ) -> Tuple[List[float], Tuple[int, bytes, bytes]]:
-        for _ in range(max(0, args.warmup)):
-            run(cmd, cwd=repo_root)
+        if not args.no_build:
+            build = ["cargo", "build", "-p", "rgbds-optimize", "--bin", "optimize"]
+            if args.cargo_profile == "release":
+                build.append("--release")
+            print("Building Rust binary...", file=sys.stderr)
+            b = subprocess.run(build, cwd=str(repo_root), check=False)
+            if b.returncode != 0:
+                return b.returncode
 
-        samples: List[float] = []
-        first_result: Tuple[int, bytes, bytes] | None = None
-        for i in range(args.runs):
-            code, out, err, seconds = run(cmd, cwd=repo_root)
-            if i == 0:
-                first_result = (code, out, err)
-            samples.append(seconds)
-        assert first_result is not None
-        print(f"{name}: {summarize(samples)}", file=sys.stderr)
-        return samples, first_result
+        print(f"Files: {len(rel_files)}", file=sys.stderr)
 
-    py_times, (py_code, py_out, py_err) = time_tool("python", py_cmd)
-    rs_times, (rs_code, rs_out, rs_err) = time_tool("rust", rs_cmd)
+        def time_tool(
+            name: str, cmd: List[str]
+        ) -> Tuple[List[float], Tuple[int, bytes, bytes]]:
+            for _ in range(max(0, args.warmup)):
+                run(cmd, cwd=repo_root)
 
-    if args.check_parity:
-        ok = (
-            (py_code == rs_code)
-            and (py_out == rs_out)
-            and (py_err == rs_err)
-        )
-        if not ok:
-            print("Parity mismatch detected during benchmark.", file=sys.stderr)
-            print(f"python exit={py_code}, rust exit={rs_code}", file=sys.stderr)
-            return 1
+            samples: List[float] = []
+            first_result: Tuple[int, bytes, bytes] | None = None
+            for i in range(args.runs):
+                code, out, err, seconds = run(cmd, cwd=repo_root)
+                if i == 0:
+                    first_result = (code, out, err)
+                samples.append(seconds)
+            assert first_result is not None
+            print(f"{name}: {summarize(samples)}", file=sys.stderr)
+            return samples, first_result
+
+        py_times, (py_code, py_out, py_err) = time_tool("python", py_cmd)
+        rs_times, (rs_code, rs_out, rs_err) = time_tool("rust", rs_cmd)
+
+        if args.check_parity:
+            py_out = normalize_newlines(py_out)
+            rs_out = normalize_newlines(rs_out)
+            py_err = normalize_newlines(py_err)
+            rs_err = normalize_newlines(rs_err)
+            ok = (
+                (py_code == rs_code)
+                and (py_out == rs_out)
+                and (py_err == rs_err)
+            )
+            if not ok:
+                print("Parity mismatch detected during benchmark.", file=sys.stderr)
+                print(f"python exit={py_code}, rust exit={rs_code}", file=sys.stderr)
+                return 1
+
+    finally:
+        list_path.unlink(missing_ok=True)
 
     py_mean = statistics.mean(py_times)
     rs_mean = statistics.mean(rs_times)

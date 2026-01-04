@@ -8,10 +8,15 @@ Search all .asm files for N code lines in a row that match some conditions.
 from argparse import ArgumentParser
 from collections import namedtuple
 from pathlib import Path
-from sys import stderr
+from sys import stderr, stdout
 
 # Regular expressions are useful for text processing
 import re
+
+try:
+	stdout.reconfigure(encoding='utf-8')
+except Exception:
+	pass
 
 # Paired registers are also useful
 PAIRS = dict(sum([[(x, y), (y, x)] for (x, y) in {'af', 'bc', 'de', 'hl'}], []))
@@ -713,12 +718,33 @@ def optimize(filename):
 
 # Gather all the file paths passed to this script as argument
 parser = ArgumentParser()
-parser.add_argument('path', type=Path, nargs='*', default=[Path('.')])
+parser.add_argument('path', type=Path, nargs='*', default=[])
+parser.add_argument(
+	'--file-list',
+	type=Path,
+	default=None,
+	help='Read additional input paths from a newline-delimited file.'
+)
 args = parser.parse_args()
 
 # Count the total instances of patterns in these files
 total_count = 0
-for path in args.path:
+
+paths = list(args.path)
+if not paths and args.file_list is None:
+	paths = [Path('.')]
+if args.file_list is not None:
+	try:
+		with open(args.file_list, 'r', encoding='utf-8') as f:
+			for line in f:
+				line = line.strip()
+				if line:
+					paths.append(Path(line))
+	except OSError as err:
+		print('Failed to read file list:', args.file_list, err, file=stderr)
+		exit(2)
+
+for path in paths:
 	if not path.exists():
 		print('File not found:', path, file=stderr)
 		continue

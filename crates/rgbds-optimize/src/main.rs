@@ -11,6 +11,7 @@ use std::fs::File;
 struct Args {
     pack_path: PathBuf,
     input_paths: Vec<PathBuf>,
+    file_list_path: Option<PathBuf>,
     #[cfg(all(feature = "pprof", unix))]
     pprof_out: Option<PathBuf>,
     #[cfg(not(all(feature = "pprof", unix)))]
@@ -23,6 +24,28 @@ fn main() {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
 
     let args = parse_args(args);
+
+    let mut file_list_paths: Vec<PathBuf> = Vec::new();
+    if let Some(list_path) = args.file_list_path.as_ref() {
+        let contents = match fs::read_to_string(list_path) {
+            Ok(s) => s,
+            Err(err) => {
+                eprintln!(
+                    "Failed to read file list {}: {}",
+                    format_path_for_output(list_path),
+                    err
+                );
+                std::process::exit(2);
+            }
+        };
+
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                file_list_paths.push(PathBuf::from(trimmed));
+            }
+        }
+    }
 
     #[cfg(not(all(feature = "pprof", unix)))]
     if args.pprof_out.is_some() {
@@ -61,10 +84,13 @@ fn main() {
         }
     };
 
-    let input_paths: Vec<PathBuf> = if args.input_paths.is_empty() {
+    let mut input_paths: Vec<PathBuf> = args.input_paths;
+    input_paths.extend(file_list_paths);
+
+    let input_paths: Vec<PathBuf> = if input_paths.is_empty() {
         vec![PathBuf::from(".")]
     } else {
-        args.input_paths
+        input_paths
     };
 
     let mut total_count: usize = 0;
@@ -169,6 +195,7 @@ fn gather_asm_files_sorted(root: &Path) -> Vec<PathBuf> {
 fn parse_args(args: Vec<OsString>) -> Args {
     let mut pack_path: PathBuf = PathBuf::from("configs/rgbds.toml");
     let mut inputs: Vec<PathBuf> = Vec::new();
+    let mut file_list_path: Option<PathBuf> = None;
     let mut pprof_out: Option<PathBuf> = None;
 
     #[cfg(all(feature = "pprof", unix))]
@@ -179,6 +206,14 @@ fn parse_args(args: Vec<OsString>) -> Args {
         if args[i] == "--pack" {
             if let Some(v) = args.get(i + 1) {
                 pack_path = PathBuf::from(v);
+                i += 2;
+                continue;
+            }
+        }
+
+        if args[i] == "--file-list" {
+            if let Some(v) = args.get(i + 1) {
+                file_list_path = Some(PathBuf::from(v));
                 i += 2;
                 continue;
             }
@@ -210,6 +245,7 @@ fn parse_args(args: Vec<OsString>) -> Args {
     Args {
         pack_path,
         input_paths: inputs,
+        file_list_path,
         pprof_out,
         #[cfg(all(feature = "pprof", unix))]
         pprof_frequency_hz,

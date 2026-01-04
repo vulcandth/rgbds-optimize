@@ -13,8 +13,10 @@ order between implementations.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
 
@@ -52,11 +54,25 @@ def to_relpaths(files: Iterable[Path], base: Path) -> List[str]:
     return out
 
 
-def run(cmd: Sequence[str], cwd: Path) -> Tuple[int, bytes, bytes]:
+def run(
+    cmd: Sequence[str], cwd: Path, env: dict[str, str] | None = None
+) -> Tuple[int, bytes, bytes]:
     """Run a command and return (exit_code, stdout, stderr)."""
 
-    p = subprocess.run(cmd, cwd=str(cwd), capture_output=True, check=False)
+    p = subprocess.run(
+        cmd,
+        cwd=str(cwd),
+        capture_output=True,
+        check=False,
+        env=env,
+    )
     return p.returncode, p.stdout, p.stderr
+
+
+def normalize_newlines(b: bytes) -> bytes:
+    """Normalize platform newlines for byte-for-byte parity checks."""
+
+    return b.replace(b"\r\n", b"\n")
 
 
 def main(argv: Sequence[str]) -> int:
@@ -88,22 +104,56 @@ def main(argv: Sequence[str]) -> int:
     files = gather_asm_files(args.path)
     rel_files = to_relpaths(files, repo_root)
 
-    py_cmd = [args.python, "optimize.py", *rel_files]
+    fd, list_path_s = tempfile.mkstemp(
+        prefix="rgbds-optimize-filelist-", suffix=".txt", dir=str(repo_root)
+    )
+    os.close(fd)
+    list_path = Path(list_path_s)
 
-    cargo_args = ["cargo", "run", "--quiet", "-p", "optimize"]
-    if args.cargo_profile == "release":
-        cargo_args.append("--release")
+    try:
+        with open(list_path, "w", encoding="utf-8", newline="\n") as f:
+            for p in rel_files:
+                f.write(p)
+                f.write("\n")
 
-    rs_cmd = [
-        *cargo_args,
-        "--",
-        "--pack",
-        str(args.pack),
-        *rel_files,
-    ]
+        py_cmd = [args.python, "optimize.py", "--file-list", str(list_path)]
 
-    py_code, py_out, py_err = run(py_cmd, cwd=repo_root)
-    rs_code, rs_out, rs_err = run(rs_cmd, cwd=repo_root)
+        cargo_args = [
+            "cargo",
+            "run",
+            "--quiet",
+            "-p",
+            "rgbds-optimize",
+            "--bin",
+            "optimize",
+        ]
+        if args.cargo_profile == "release":
+            cargo_args.append("--release")
+
+        rs_cmd = [
+            *cargo_args,
+            "--",
+            "--pack",
+            str(args.pack),
+            "--file-list",
+            str(list_path),
+        ]
+
+        py_env = {
+            **os.environ,
+            "PYTHONUTF8": "1",
+            "PYTHONIOENCODING": "utf-8",
+        }
+
+        py_code, py_out, py_err = run(py_cmd, cwd=repo_root, env=py_env)
+        rs_code, rs_out, rs_err = run(rs_cmd, cwd=repo_root)
+    finally:
+        list_path.unlink(missing_ok=True)
+
+    py_out = normalize_newlines(py_out)
+    rs_out = normalize_newlines(rs_out)
+    py_err = normalize_newlines(py_err)
+    rs_err = normalize_newlines(rs_err)
 
     ok = True
 
