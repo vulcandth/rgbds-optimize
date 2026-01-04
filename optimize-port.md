@@ -106,12 +106,12 @@ The Python tool is a small state machine per pattern, with optional rewind.
 
 Rust’s popular `regex` crate does not support backreferences; `optimize.py` uses them in places (example: `ld ([abcdehl]), \1`).
 
-- [ ] Inventory which patterns depend on backreferences or capture equality.
-- [ ] Choose an approach that keeps performance strong:
-	- Preferred: parse instructions into `(mnemonic, operands[])` tokens and express patterns structurally.
-	- Acceptable: keep regex for simple patterns, and implement the “backref” patterns with custom predicate functions.
-	- Avoid making everything a backtracking regex (accuracy is critical, but speed is a strong second).
-- [ ] Ensure case-insensitivity where RGBDS accepts it (at minimum: match current behavior, which is mostly case-sensitive string comparisons plus some `.lower()` uses).
+- [x] Inventory which patterns depend on backreferences or capture equality.
+- [x] Choose an approach that keeps performance strong:
+  - Preferred: parse instructions into `(mnemonic, operands[])` tokens and express patterns structurally.
+  - Acceptable: keep regex for simple patterns, and implement the “backref” patterns with custom predicate functions.
+  - Avoid making everything a backtracking regex (accuracy is critical, but speed is a strong second).
+- [x] Ensure case-insensitivity where RGBDS accepts it (at minimum: match current behavior, which is mostly case-sensitive string comparisons plus some `.lower()` uses).
 
 ## 6. Config-Driven Pattern Packs (Community-Friendly)
 

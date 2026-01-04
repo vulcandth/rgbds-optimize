@@ -10,6 +10,74 @@ pub struct Line {
     pub context: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Instruction {
+    pub mnemonic: String,
+    pub operands: Vec<String>,
+}
+
+impl Instruction {
+    pub fn operand(&self, idx: usize) -> Option<&str> {
+        self.operands.get(idx).map(|s| s.as_str())
+    }
+}
+
+pub fn parse_instruction(code: &str) -> Option<Instruction> {
+    let code = code.trim();
+    if code.is_empty() {
+        return None;
+    }
+
+    let (mnemonic_raw, rest) = match code.split_once(' ') {
+        Some((m, r)) => (m, r.trim()),
+        None => (code, ""),
+    };
+
+    let mnemonic = mnemonic_raw.to_ascii_lowercase();
+    let operands = if rest.is_empty() {
+        Vec::new()
+    } else {
+        split_operands(rest)
+            .into_iter()
+            .map(|op| op.trim().to_string())
+            .filter(|op| !op.is_empty())
+            .collect()
+    };
+
+    Some(Instruction { mnemonic, operands })
+}
+
+fn split_operands(s: &str) -> Vec<&str> {
+    // Split by commas, but keep bracketed expressions intact.
+    // This is intentionally minimal: it does not attempt to parse strings or macros.
+    let mut out = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start = 0usize;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&s[start..]);
+    out
+}
+
+pub fn canonicalize_rgbds_operand(op: &str) -> String {
+    // Normalize common RGBDS synonyms so structural matching can treat them as equivalent.
+    // Keep this conservative; expand later as patterns require.
+    match op.to_ascii_lowercase().as_str() {
+        "[hli]" | "[hl+]" => "[hli]".to_string(),
+        "[hld]" | "[hl-]" => "[hld]".to_string(),
+        other => other.to_string(),
+    }
+}
+
 pub type ConditionFn = fn(&Line, &[Line]) -> bool;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -322,5 +390,33 @@ mod tests {
         let steps = [PatternStep::new(is_a), PatternStep::new(is_b)];
         let got = find_pattern_instances("file.asm", &lines, "Test", &steps);
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn parse_instruction_splits_operands_and_lowercases_mnemonic() {
+        let ins = parse_instruction("LD a, [hl+]").unwrap();
+        assert_eq!(ins.mnemonic, "ld");
+        assert_eq!(
+            ins.operands,
+            vec!["a", "[hl+]"]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn split_operands_does_not_split_inside_brackets() {
+        let ins = parse_instruction("ld a, [hl+], b").unwrap();
+        assert_eq!(ins.operands.len(), 3);
+        assert_eq!(ins.operands[1], "[hl+]");
+    }
+
+    #[test]
+    fn canonicalize_rgbds_operand_normalizes_hl_autoinc_and_autodec() {
+        assert_eq!(canonicalize_rgbds_operand("[hl+]"), "[hli]");
+        assert_eq!(canonicalize_rgbds_operand("[hli]"), "[hli]");
+        assert_eq!(canonicalize_rgbds_operand("[hl-]"), "[hld]");
+        assert_eq!(canonicalize_rgbds_operand("[hld]"), "[hld]");
     }
 }
