@@ -190,9 +190,7 @@ fn builtin_pattern_steps(builtin: &str) -> Option<&'static [PatternStep]> {
 
         _ => None,
     }
-    .or_else(|| crate::patterns::steps(builtin))
-
-    ?;
+    .or_else(|| crate::patterns::steps(builtin))?;
 
     let leaked: &'static [PatternStep] = Box::leak(steps.into_boxed_slice());
     if let Ok(mut cache) = CACHE.lock() {

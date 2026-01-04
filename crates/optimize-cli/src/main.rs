@@ -52,11 +52,7 @@ fn main() {
     let pack = match optimize_core::load_pattern_pack_toml(&pack_contents) {
         Ok(p) => p,
         Err(err) => {
-            eprintln!(
-                "Invalid pack config {}: {}",
-                args.pack_path.display(),
-                err
-            );
+            eprintln!("Invalid pack config {}: {}", args.pack_path.display(), err);
             std::process::exit(2);
         }
     };

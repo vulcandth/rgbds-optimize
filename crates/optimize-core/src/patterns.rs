@@ -139,7 +139,8 @@ static SBC_BCDEHL_OR_0_RE: LazyLock<Regex> =
 static ADC_HBD_OR_0_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^adc (?:[hbd]|[%\$&]?0+$)").unwrap());
 static LD_HBD_A_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^ld [hbd], a").unwrap());
-static LD_HBD_0_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^ld [hbd], [%\$&]?0+$").unwrap());
+static LD_HBD_0_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^ld [hbd], [%\$&]?0+$").unwrap());
 
 static LD_PAIR_IMM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^ld (?:hl|bc|de), [^\[]").unwrap());
@@ -615,7 +616,12 @@ fn cond_redundant_loads_step2(line: &Line, prev: &[Line]) -> bool {
         .next()
         .unwrap_or("")
         .trim();
-    let prev_src = prev[0].code.split(',').nth(1).map(|s| s.trim()).unwrap_or("");
+    let prev_src = prev[0]
+        .code
+        .split(',')
+        .nth(1)
+        .map(|s| s.trim())
+        .unwrap_or("");
 
     let dst = line
         .code

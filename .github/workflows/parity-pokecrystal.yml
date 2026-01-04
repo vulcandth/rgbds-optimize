@@ -26,9 +26,12 @@ jobs:
       - name: Clone pret/pokecrystal (pinned)
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/pret/pokecrystal.git pokecrystal
+          rm -rf pokecrystal
+          git init pokecrystal
           cd pokecrystal
-          git checkout --detach 3c0d2b26a54dc93790bf967383283a491f91bf48
+          git remote add origin https://github.com/pret/pokecrystal.git
+          git fetch --depth 1 origin 3c0d2b26a54dc93790bf967383283a491f91bf48
+          git checkout --detach FETCH_HEAD
 
       - name: Parity check (Python vs Rust)
         run: python3 tools/parity.py --pack configs/pret.toml --cargo-profile release pokecrystal

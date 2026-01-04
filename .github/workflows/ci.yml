@@ -29,3 +29,34 @@ jobs:
 
       - name: Cargo test
         run: cargo test
+
+  policy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: cargo-deny
+        run: cargo deny check
+
+      - name: Install cargo-about
+        run: cargo install cargo-about --locked
+
+      - name: Generate THIRD_PARTY_LICENSES.html
+        run: python3 tools/generate_third_party_licenses.py
+
+      - name: Ensure THIRD_PARTY_LICENSES.html is up-to-date
+        run: |
+          if [[ -n "$(git status --porcelain THIRD_PARTY_LICENSES.html)" ]]; then
+            git status --porcelain THIRD_PARTY_LICENSES.html
+            git diff -- THIRD_PARTY_LICENSES.html || true
+            exit 1
+          fi

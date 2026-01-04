@@ -174,32 +174,11 @@ You requested matching output to the current output, with an explicit comparison
   - Collects and sorts the `.asm` file list.
   - Passes the explicit file list to both tools (so neither implementation uses its own directory traversal order).
   - Runs both commands from the same working directory.
-- [x] Add a documented “manual verification” procedure.
+- [x] Add a documented “manual verification” procedure in `README.md`.
 - [x] Run the parity check on a real codebase (`pret/pokecrystal`-style repo) and confirm byte-for-byte matching output and exit code.
 - [x] Optional CI job that checks output parity against a pinned commit of `pret/pokecrystal`.
   - Implemented as a GitHub Actions workflow: `.github/workflows/parity-pokecrystal.yml`
   - Pinned commit: `3c0d2b26a54dc93790bf967383283a491f91bf48`
-
-Example commands (adjust paths):
-
-```bash
-# Quick one-shot parity check (collects/sorts files, then diffs Python vs Rust)
-python3 tools/parity.py /path/to/pokecrystal
-
-# Verified locally against pokecrystal-up:
-python3 tools/parity.py /home/vulcandth/GitHub/pokecrystal-up
-
-# Or, run the tools directly on the same explicit file list (deterministic ordering)
-find /path/to/pokecrystal -name '*.asm' -print0 | sort -z | xargs -0 \
-  python3 optimize.py > /tmp/py.out; echo $? > /tmp/py.code
-
-find /path/to/pokecrystal -name '*.asm' -print0 | sort -z | xargs -0 \
-  cargo run --release -p optimize -- --pack configs/pret.toml > /tmp/rs.out; echo $? > /tmp/rs.code
-
-diff -u /tmp/py.out /tmp/rs.out
-
-diff -u /tmp/py.code /tmp/rs.code
-```
 
 ## 9. Performance Plan (After Compatibility)
 
@@ -210,30 +189,29 @@ Once output parity is proven, optimize.
 - [x] Benchmark on a large repo (e.g., `pokecrystal`) in release mode.
   - Verified locally on `pokecrystal-up` via `tools/bench.py`.
 - [x] Profile hotspots (likely: regex matching, string allocations, per-line normalization).
-  - Rust (Linux): `perf record -g -- cargo run --release -p optimize -- --pack configs/pret.toml <files...>`
-  - Rust (nice UI): `cargo install flamegraph` then `cargo flamegraph -p optimize --root -- --pack configs/pret.toml <files...>`
-  - Rust (WSL-friendly, no system `perf` required):
-    - `cargo run --release -p optimize --features pprof -- --pack configs/pret.toml --pprof /tmp/optimize.svg --pprof-frequency 1000 <path>`
-  - Python: `python3 -m cProfile -o /tmp/optimize.prof optimize.py <files...>` then `python3 -m pstats /tmp/optimize.prof`
+  - Documented in `README.md`.
 
 - [x] Remove accidental per-line regex compilation in Rust patterns.
   - Outcome (pokecrystal-up, 3015 files): Rust ~1.46s vs Python ~25.8s (~17.6x faster).
-- [ ] Targeted optimizations that should not affect correctness:
-	- Pre-compile regexes once per pattern pack
-	- Avoid per-line `String` allocations where possible (use slices + indices)
-	- Use a fast instruction tokenizer for structural matching
-	- Use `rayon` only if it can preserve deterministic output (often it cannot without extra work)
+- [x] Targeted optimizations that should not affect correctness:
+  - Regexes compile once per process (static `LazyLock<Regex>` + `PatternStep::regex`)
+  - Builtin pattern steps are cached across files (prevents rebuilding/copying per file)
+  - Instruction parsing is done via a lightweight tokenizer (`parse_instruction`)
+  - Parallelism intentionally not used to preserve deterministic output
 
 ## 10. Documentation and Community Contribution Workflow
 
-- [ ] Document how to write patterns in the config DSL, with examples.
-- [ ] Provide a “core” pack that’s gbdev-generic and a “pret” pack for Pret-specific patterns.
-- [ ] Add a short compatibility statement: “Initial goal is to match optimize.py output; new features may be added behind flags or new packs.”
-- [ ] Add contribution guidelines: tests required for new patterns, and include fixture .asm cases.
+- [x] Add a `README.md` with user-facing documentation.
+- [x] Document how to write patterns in the config format, with examples (in `README.md`).
+- [x] Provide a “core” pack that’s gbdev-generic and a “pret” pack for Pret-specific patterns.
+- [x] Add a short compatibility statement (in `README.md`).
+- [x] Add contribution guidelines: tests required for new patterns, and include fixture .asm cases (in `README.md`).
 
 ## Definition of Done
 
-- [ ] `cargo run --release -- <path>` produces the same output and exit code as `python3 optimize.py <path>` for representative repos.
-- [ ] A config-driven pattern pack mechanism exists, and Pret-specific patterns can be excluded entirely.
-- [ ] Syntax cases like `[hl+]` are handled correctly.
-- [ ] Performance is competitive on large codebases without sacrificing accuracy.
+- [x] `cargo run --release -- <path>` produces the same output and exit code as `python3 optimize.py <path>` for representative repos.
+  - Verified locally via `python3 tools/parity.py /home/vulcandth/GitHub/pokecrystal-up`.
+  - Verified in CI via the pinned `pret/pokecrystal` parity workflow.
+- [x] A config-driven pattern pack mechanism exists, and Pret-specific patterns can be excluded entirely.
+- [x] Syntax cases like `[hl+]` are handled correctly.
+- [x] Performance is competitive on large codebases without sacrificing accuracy.
