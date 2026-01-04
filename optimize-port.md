@@ -70,37 +70,37 @@ Match the Python tool’s observable behavior before adding new features.
 
 Implement a parser that reproduces Python’s preprocessing first, then optionally becomes more robust.
 
-- [ ] Implement `Line` representation equivalent to Python:
-	- `num` (1-based)
-	- `code` (normalized)
-	- `comment` and `comment_lower`
-	- `text` (original, without trailing newline)
-	- `context` (current label)
-- [ ] Implement preprocessing rules matching Python:
-	- Strip trailing newline
-	- Split comment at first `;`
-	- Skip blank `code` lines
-	- Normalize whitespace sequences to a single space
-	- Track context label with: “line begins with alpha or `_` and contains `:`”
-- [ ] Expand label/context detection beyond Pret conventions without breaking compatibility:
-	- Support local labels like `.loop:`
-	- Support RGBDS double-colon globals like `Func::`
-	- Support labels containing digits and `.`
-	- Decide how to treat macro labels / `rept` blocks (at minimum: don’t crash, keep context stable)
+- [x] Implement `Line` representation equivalent to Python:
+  - `num` (1-based)
+  - `code` (normalized)
+  - `comment` and `comment_lower`
+  - `text` (original, without trailing newline)
+  - `context` (current label)
+- [x] Implement preprocessing rules matching Python:
+  - Strip trailing newline
+  - Split comment at first `;`
+  - Skip blank `code` lines
+  - Normalize whitespace sequences to a single space
+  - Track context label with: “line begins with alpha or `_` and contains `:`”
+- [x] Expand label/context detection beyond Pret conventions without breaking compatibility:
+  - Support local labels like `.loop:`
+  - Support RGBDS double-colon globals like `Func::`
+  - Support labels containing digits and `.`
+  - Decide how to treat macro labels / `rept` blocks (at minimum: don’t crash, keep context stable)
 
 ## 4. Pattern Engine Architecture (Accuracy First, Then Speed)
 
 The Python tool is a small state machine per pattern, with optional rewind.
 
-- [ ] Implement the same state machine semantics:
-	- Each pattern is a list of conditions, one per “state”.
-	- `prev_lines` is the list of previously matched lines for this pattern.
-	- When all conditions match, emit the match and reset.
-	- If a condition is marked “allow rewind” (the tuple form in Python), step back and retry.
-	- If a condition fails without rewind, reset and re-scan with correct index behavior.
-- [ ] Implement suppression comments exactly:
-	- A match should be skipped if `comment_lower` starts with `"no-optimize " + pattern_name_lower`.
-- [ ] Ensure patterns do not match across labels unless the original logic allows it.
+- [x] Implement the same state machine semantics:
+  - Each pattern is a list of conditions, one per “state”.
+  - `prev_lines` is the list of previously matched lines for this pattern.
+  - When all conditions match, emit the match and reset.
+  - If a condition is marked “allow rewind” (the tuple form in Python), step back and retry.
+  - If a condition fails without rewind, reset and re-scan with correct index behavior.
+- [x] Implement suppression comments exactly:
+  - A match should be skipped if `comment_lower` starts with `"no-optimize " + pattern_name_lower`.
+- [x] Ensure patterns do not match across labels unless the original logic allows it.
 
 ## 5. Regex vs Structured Parsing (Rust Compatibility Constraints)
 
