@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/optimize-cli",
-  "crates/optimize-core",
+  "crates/rgbds-optimize",
+  "crates/rgbds-optimize-core",
 ]
 
 [workspace.package]

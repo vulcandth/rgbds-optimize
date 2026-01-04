@@ -34,8 +34,8 @@ post_date: "2026-01-04"
 ## 1. Repo Layout, Tooling, and Test Process (First Step)
 
 - [x] Convert the repository into a Rust workspace (or single crate) with a clear layout:
-  - `crates/optimize-cli/` (binary)
-  - `crates/optimize-core/` (library: parsing + pattern engine)
+  - `crates/rgbds-optimize/` (binary)
+  - `crates/rgbds-optimize-core/` (library: parsing + pattern engine)
   - `configs/` (pattern packs)
   - `tests/fixtures/` (small curated .asm samples)
 - [x] Add `.gitignore` appropriate for Rust (`/target/`, editor temp files).

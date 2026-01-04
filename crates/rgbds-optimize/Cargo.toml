@@ -10,7 +10,7 @@ name = "optimize"
 path = "src/main.rs"
 
 [dependencies]
-optimize-core = { package = "rgbds-optimize-core", path = "../optimize-core" }
+optimize-core = { package = "rgbds-optimize-core", path = "../rgbds-optimize-core" }
 pprof = { version = "0.13", optional = true, features = ["flamegraph"] }
 
 [features]
