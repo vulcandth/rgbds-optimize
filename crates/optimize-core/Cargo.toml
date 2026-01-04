@@ -8,3 +8,6 @@ license.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

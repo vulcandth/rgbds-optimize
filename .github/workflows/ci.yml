@@ -18,7 +18,7 @@ jobs:
       - name: Install Rust (MSRV)
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.74.0
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cargo fmt

@@ -1,5 +1,11 @@
 #![forbid(unsafe_code)]
 
+mod pattern_config;
+mod patterns;
+
+pub use pattern_config::run_pack_on_lines;
+pub use pattern_config::{load_pattern_pack_toml, PatternPack};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Line {
     pub num: usize,
@@ -71,33 +77,121 @@ fn split_operands(s: &str) -> Vec<&str> {
 pub fn canonicalize_rgbds_operand(op: &str) -> String {
     // Normalize common RGBDS synonyms so structural matching can treat them as equivalent.
     // Keep this conservative; expand later as patterns require.
-    match op.to_ascii_lowercase().as_str() {
+    let lowered = op.trim().to_ascii_lowercase();
+
+    // RGBDS is fairly permissive about whitespace; make bracketed operands robust.
+    let lowered = if lowered.starts_with('[') && lowered.ends_with(']') {
+        lowered
+            .chars()
+            .filter(|c| !c.is_ascii_whitespace())
+            .collect()
+    } else {
+        lowered
+    };
+
+    match lowered.as_str() {
         "[hli]" | "[hl+]" => "[hli]".to_string(),
         "[hld]" | "[hl-]" => "[hld]".to_string(),
         other => other.to_string(),
     }
 }
 
+pub fn parse_rgbds_int(op: &str) -> Option<i64> {
+    let s = op.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    if s.eq_ignore_ascii_case("false") {
+        return Some(0);
+    }
+    if s.eq_ignore_ascii_case("true") {
+        return Some(1);
+    }
+
+    let (sign, rest) = match s.as_bytes()[0] {
+        b'+' => (1i64, &s[1..]),
+        b'-' => (-1i64, &s[1..]),
+        _ => (1i64, s),
+    };
+
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return None;
+    }
+
+    let (radix, digits) = if let Some(hex) = rest.strip_prefix('$') {
+        (16u32, hex)
+    } else if let Some(bin) = rest.strip_prefix('%') {
+        (2u32, bin)
+    } else if let Some(oct) = rest.strip_prefix('&') {
+        (8u32, oct)
+    } else if let Some(hex) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
+        (16u32, hex)
+    } else {
+        (10u32, rest)
+    };
+
+    let digits: String = digits.chars().filter(|c| *c != '_').collect();
+    if digits.is_empty() {
+        return None;
+    }
+
+    let unsigned = if radix == 10 {
+        digits.parse::<i64>().ok()?
+    } else {
+        i64::from_str_radix(&digits, radix).ok()?
+    };
+    Some(sign * unsigned)
+}
+
+pub fn is_rgbds_zero_literal(op: &str) -> bool {
+    matches!(parse_rgbds_int(op), Some(0))
+}
+
 pub type ConditionFn = fn(&Line, &[Line]) -> bool;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug)]
+pub enum StepCondition {
+    Fn(ConditionFn),
+    Regex(&'static std::sync::LazyLock<regex::Regex>),
+}
+
+#[derive(Copy, Clone, Debug)]
 pub struct PatternStep {
     pub rewind: Option<usize>,
-    pub condition: ConditionFn,
+    pub condition: StepCondition,
 }
 
 impl PatternStep {
     pub fn new(condition: ConditionFn) -> Self {
         Self {
             rewind: None,
-            condition,
+            condition: StepCondition::Fn(condition),
+        }
+    }
+
+    pub fn regex(re: &'static std::sync::LazyLock<regex::Regex>) -> Self {
+        Self {
+            rewind: None,
+            condition: StepCondition::Regex(re),
         }
     }
 
     pub fn with_rewind(rewind: usize, condition: ConditionFn) -> Self {
         Self {
             rewind: Some(rewind),
-            condition,
+            condition: StepCondition::Fn(condition),
+        }
+    }
+
+    pub fn with_rewind_regex(
+        rewind: usize,
+        re: &'static std::sync::LazyLock<regex::Regex>,
+    ) -> Self {
+        Self {
+            rewind: Some(rewind),
+            condition: StepCondition::Regex(re),
         }
     }
 }
@@ -137,7 +231,12 @@ pub fn find_pattern_instances(
         let step = steps[state];
         let skip = cur_line.comment_lower.starts_with(&suppress_prefix);
 
-        if !skip && (step.condition)(cur_line, &prev_lines) {
+        let matched = match step.condition {
+            StepCondition::Fn(cond) => cond(cur_line, &prev_lines),
+            StepCondition::Regex(re) => re.is_match(&cur_line.code),
+        };
+
+        if !skip && matched {
             prev_lines.push(cur_line.clone());
             state += 1;
 
@@ -152,11 +251,6 @@ pub fn find_pattern_instances(
             if let Some(rewind) = step.rewind {
                 i -= rewind as isize;
                 state = state.saturating_sub(rewind);
-                if prev_lines.len() >= rewind {
-                    prev_lines.truncate(prev_lines.len() - rewind);
-                } else {
-                    prev_lines.clear();
-                }
             } else {
                 i -= state as isize;
                 prev_lines.clear();
@@ -373,14 +467,17 @@ mod tests {
     #[test]
     fn pattern_engine_rewinds_when_configured() {
         // Steps: match "a", then try "b". If second step fails, rewind 1 and retry.
-        // Input: a, a, b should yield one match (a, b) starting at the second "a".
+        // Input: a, a, b should yield one match.
+        // optimize.py's rewind behavior does not trim prev_lines, so the match includes both "a" lines.
         let src = "Label:\n  a\n  a\n  b\n";
         let lines = preprocess_properties(src);
         let steps = [PatternStep::new(is_a), PatternStep::with_rewind(1, is_b)];
         let got = find_pattern_instances("file.asm", &lines, "Test", &steps);
         assert_eq!(got.len(), 1);
+        assert_eq!(got[0].lines.len(), 3);
         assert_eq!(got[0].lines[0].code, "a");
-        assert_eq!(got[0].lines[1].code, "b");
+        assert_eq!(got[0].lines[1].code, "a");
+        assert_eq!(got[0].lines[2].code, "b");
     }
 
     #[test]
@@ -418,5 +515,32 @@ mod tests {
         assert_eq!(canonicalize_rgbds_operand("[hli]"), "[hli]");
         assert_eq!(canonicalize_rgbds_operand("[hl-]"), "[hld]");
         assert_eq!(canonicalize_rgbds_operand("[hld]"), "[hld]");
+        assert_eq!(canonicalize_rgbds_operand("[ hl + ]"), "[hli]");
+        assert_eq!(canonicalize_rgbds_operand("[ hl - ]"), "[hld]");
+    }
+
+    #[test]
+    fn parse_rgbds_int_handles_common_radices_and_signs() {
+        assert_eq!(parse_rgbds_int("0"), Some(0));
+        assert_eq!(parse_rgbds_int("-1"), Some(-1));
+        assert_eq!(parse_rgbds_int("+2"), Some(2));
+        assert_eq!(parse_rgbds_int("$ff"), Some(255));
+        assert_eq!(parse_rgbds_int("0xFF"), Some(255));
+        assert_eq!(parse_rgbds_int("%1010"), Some(10));
+        assert_eq!(parse_rgbds_int("&377"), Some(255));
+        assert_eq!(parse_rgbds_int("false"), Some(0));
+        assert_eq!(parse_rgbds_int("true"), Some(1));
+        assert_eq!(parse_rgbds_int("1_000"), Some(1000));
+    }
+
+    #[test]
+    fn is_rgbds_zero_literal_accepts_multiple_spellings() {
+        assert!(is_rgbds_zero_literal("0"));
+        assert!(is_rgbds_zero_literal("$00"));
+        assert!(is_rgbds_zero_literal("0x0"));
+        assert!(is_rgbds_zero_literal("%0"));
+        assert!(is_rgbds_zero_literal("&0"));
+        assert!(is_rgbds_zero_literal("false"));
+        assert!(!is_rgbds_zero_literal("1"));
     }
 }

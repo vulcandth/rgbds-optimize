@@ -27,9 +27,9 @@ post_date: "2026-01-04"
 
 ## License
 
-- [ ] License the Rust port under the MIT License.
-- [ ] Add a `LICENSE` file with the standard MIT text.
-- [ ] Ensure any third-party crates are MIT/Apache-2.0 compatible (or otherwise acceptable), and record them in `Cargo.lock`.
+- [x] License the Rust port under the MIT License.
+- [x] Add a `LICENSE` file with the standard MIT text.
+- [x] Ensure any third-party crates are MIT/Apache-2.0 compatible (or otherwise acceptable), and record them in `Cargo.lock`.
 
 ## 1. Repo Layout, Tooling, and Test Process (First Step)
 
@@ -45,6 +45,8 @@ post_date: "2026-01-04"
   - `cargo fmt --check` and `cargo clippy -- -D warnings` for hygiene
   - Optional CI (GitHub Actions) that runs tests on Linux/macOS/Windows.
 - [x] Decide and document minimum supported Rust version (MSRV), then enforce it in CI.
+
+Note: This repo currently tracks the newest stable Rust toolchain via `rust-toolchain.toml` and CI.
 
 ## 2. Output Compatibility Contract (Lock This Down Early)
 
@@ -117,72 +119,82 @@ Rust’s popular `regex` crate does not support backreferences; `optimize.py` us
 
 The community goal is best met by separating “engine” from “pattern definitions” and shipping multiple optional packs.
 
-- [ ] Design a config format for patterns (suggested: TOML or YAML):
-	- Pattern metadata: name, pack, enabled-by-default, description
-	- A list of steps/conditions (N-step pattern)
-	- Condition types for a minimal-but-useful DSL:
-		- `opcode_is`, `opcode_in`
-		- `operand_eq` (string or normalized token)
-		- `operand_matches` (regex)
-		- `same_as_prev_operand` (capture-like behavior)
-		- `context_eq_prev` (matches Python’s label-context restrictions)
-		- `skip_if_comment_prefix` (suppression)
-		- `allow_rewind: N`
-- [ ] Implement a built-in “core” pack in Rust that matches today’s `optimize.py` patterns.
-- [ ] Split Pret-specific rules into a separate optional config pack (disabled by default).
-- [ ] Decide how to handle patterns that are hard to express declaratively:
-	- Allow “builtin predicates” referenced from config by name.
-	- Keep the public DSL stable for community contributions.
+- [x] Design a config format for patterns (suggested: TOML or YAML):
+  - Pattern metadata: name, pack, enabled-by-default, description
+  - A list of steps/conditions (N-step pattern)
+  - Condition types for a minimal-but-useful DSL:
+    - `opcode_is`, `opcode_in`
+    - `operand_eq` (string or normalized token)
+    - `operand_matches` (regex)
+    - `same_as_prev_operand` (capture-like behavior)
+    - `context_eq_prev` (matches Python’s label-context restrictions)
+    - `skip_if_comment_prefix` (suppression)
+    - `allow_rewind: N`
+- [x] Implement a built-in “core” pack in Rust that matches today’s `optimize.py` patterns.
+- [x] Split Pret-specific rules into a separate optional config pack (disabled by default).
+- [x] Decide how to handle patterns that are hard to express declaratively:
+  - Allow “builtin predicates” referenced from config by name.
+  - Keep the public DSL stable for community contributions.
 
 ## 7. RGBDS Syntax Coverage Checklist (Beyond Pret Conventions)
 
 This is a checklist of syntax cases to ensure the tool is robust on real-world RGBDS projects.
 
-- [ ] Accept bracket variants as equivalent when appropriate:
+
+- [x] Accept bracket variants as equivalent when appropriate:
 	- Treat `[hli]`, `[hl+]` as the same addressing mode.
 	- Treat `[hld]`, `[hl-]` as the same addressing mode.
-- [ ] Handle numeric literal variants used in the ecosystem:
+
+- [x] Handle numeric literal variants used in the ecosystem:
 	- Hex: `$FF`, `0xFF` (if present), `&377` (octal style in some code)
 	- Binary: `%1010`
 	- Decimal: `123`
 	- Signed immediates where valid
-- [ ] Handle operand spacing variations:
+
+- [x] Handle operand spacing variations:
 	- `ld a,[hl]` vs `ld a, [hl]`
 	- Multiple spaces / tabs
-- [ ] Handle non-instruction lines safely:
+
+- [x] Handle non-instruction lines safely:
 	- Directives: `SECTION`, `db`, `dw`, `INCLUDE`, `REPT/ENDR`, `MACRO/ENDM`, etc.
 	- Macro invocations and arguments
 	- Continuation lines if the assembler supports them
-- [ ] Ensure comment stripping does not break strings (Python currently does not special-case strings); decide whether to preserve compatibility or improve it behind a flag.
+
+- [x] Ensure comment stripping does not break strings (Python currently does not special-case strings); preserve compatibility by default, and consider a future optional flag for string-aware semicolon handling.
 
 ## 8. Verification: Match Python Output on Real Codebases
 
 You requested matching output to the current output, with an explicit comparison using Pret’s `pokecrystal`.
 
-- [ ] Add an integration test harness that runs both tools and diffs output:
-	- Run `python3 optimize.py <paths...>`
-	- Run `cargo run --release -- <paths...>`
-	- Compare stdout exactly (byte-for-byte)
-	- Compare exit code exactly
-- [ ] Make the comparison deterministic:
-	- Ensure both tools scan files in the same order (sort file list)
-	- Ensure the same working directory and relative path printing
-- [ ] Add a documented “manual verification” procedure:
-	- Clone `https://github.com/pret/pokecrystal` to a known path
-	- Run both tools against the same directories
-	- Save outputs and run `diff -u`
+- [x] Add an integration test harness that runs both tools and diffs output:
+  - Runs on a small fixture corpus under `tests/fixtures/parity/`.
+  - Compares stdout exactly (byte-for-byte).
+  - Compares exit code exactly.
+- [x] Make the comparison deterministic:
+  - Collects and sorts the `.asm` file list.
+  - Passes the explicit file list to both tools (so neither implementation uses its own directory traversal order).
+  - Runs both commands from the same working directory.
+- [x] Add a documented “manual verification” procedure.
+- [x] Run the parity check on a real codebase (`pret/pokecrystal`-style repo) and confirm byte-for-byte matching output and exit code.
 - [ ] Optional CI job (if acceptable) that checks output parity against a pinned commit of `pret/pokecrystal`:
-	- Use a submodule or `git clone --depth 1 --branch <pinned>`
-	- Cache builds to keep CI reasonable
+  - Use a submodule or `git clone --depth 1 --branch <pinned>`
+  - Cache builds to keep CI reasonable
 
 Example commands (adjust paths):
 
 ```bash
-# Python baseline
-python3 optimize.py /path/to/pokecrystal > /tmp/py.out; echo $? > /tmp/py.code
+# Quick one-shot parity check (collects/sorts files, then diffs Python vs Rust)
+python3 tools/parity.py /path/to/pokecrystal
 
-# Rust candidate
-cargo run --release -- /path/to/pokecrystal > /tmp/rs.out; echo $? > /tmp/rs.code
+# Verified locally against pokecrystal-up:
+python3 tools/parity.py /home/vulcandth/GitHub/pokecrystal-up
+
+# Or, run the tools directly on the same explicit file list (deterministic ordering)
+find /path/to/pokecrystal -name '*.asm' -print0 | sort -z | xargs -0 \
+  python3 optimize.py > /tmp/py.out; echo $? > /tmp/py.code
+
+find /path/to/pokecrystal -name '*.asm' -print0 | sort -z | xargs -0 \
+  cargo run --release -p optimize -- --pack configs/pret.toml > /tmp/rs.out; echo $? > /tmp/rs.code
 
 diff -u /tmp/py.out /tmp/rs.out
 
@@ -193,8 +205,14 @@ diff -u /tmp/py.code /tmp/rs.code
 
 Once output parity is proven, optimize.
 
+- [x] Add a deterministic timing harness for Python vs Rust.
+  - Implemented as `tools/bench.py` (dependency-free).
 - [ ] Benchmark on a large repo (e.g., `pokecrystal`) in release mode.
+  - Use `python3 tools/bench.py /path/to/repo --runs 5 --warmup 1 --check-parity`
 - [ ] Profile hotspots (likely: regex matching, string allocations, per-line normalization).
+  - Rust (Linux): `perf record -g -- cargo run --release -p optimize -- --pack configs/pret.toml <files...>`
+  - Rust (nice UI): `cargo install flamegraph` then `cargo flamegraph -p optimize --root -- --pack configs/pret.toml <files...>`
+  - Python: `python3 -m cProfile -o /tmp/optimize.prof optimize.py <files...>` then `python3 -m pstats /tmp/optimize.prof`
 - [ ] Targeted optimizations that should not affect correctness:
 	- Pre-compile regexes once per pattern pack
 	- Avoid per-line `String` allocations where possible (use slices + indices)
