@@ -1,0 +1,34 @@
+name: parity-pokecrystal
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 0"
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone pret/pokecrystal (pinned)
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/pret/pokecrystal.git pokecrystal
+          cd pokecrystal
+          git checkout --detach 3c0d2b26a54dc93790bf967383283a491f91bf48
+
+      - name: Parity check (Python vs Rust)
+        run: python3 tools/parity.py --pack configs/pret.toml --cargo-profile release pokecrystal

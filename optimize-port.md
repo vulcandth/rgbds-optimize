@@ -176,9 +176,9 @@ You requested matching output to the current output, with an explicit comparison
   - Runs both commands from the same working directory.
 - [x] Add a documented “manual verification” procedure.
 - [x] Run the parity check on a real codebase (`pret/pokecrystal`-style repo) and confirm byte-for-byte matching output and exit code.
-- [ ] Optional CI job (if acceptable) that checks output parity against a pinned commit of `pret/pokecrystal`:
-  - Use a submodule or `git clone --depth 1 --branch <pinned>`
-  - Cache builds to keep CI reasonable
+- [x] Optional CI job that checks output parity against a pinned commit of `pret/pokecrystal`.
+  - Implemented as a GitHub Actions workflow: `.github/workflows/parity-pokecrystal.yml`
+  - Pinned commit: `3c0d2b26a54dc93790bf967383283a491f91bf48`
 
 Example commands (adjust paths):
 
@@ -207,9 +207,9 @@ Once output parity is proven, optimize.
 
 - [x] Add a deterministic timing harness for Python vs Rust.
   - Implemented as `tools/bench.py` (dependency-free).
-- [ ] Benchmark on a large repo (e.g., `pokecrystal`) in release mode.
-  - Use `python3 tools/bench.py /path/to/repo --runs 5 --warmup 1 --check-parity`
-- [ ] Profile hotspots (likely: regex matching, string allocations, per-line normalization).
+- [x] Benchmark on a large repo (e.g., `pokecrystal`) in release mode.
+  - Verified locally on `pokecrystal-up` via `tools/bench.py`.
+- [x] Profile hotspots (likely: regex matching, string allocations, per-line normalization).
   - Rust (Linux): `perf record -g -- cargo run --release -p optimize -- --pack configs/pret.toml <files...>`
   - Rust (nice UI): `cargo install flamegraph` then `cargo flamegraph -p optimize --root -- --pack configs/pret.toml <files...>`
   - Rust (WSL-friendly, no system `perf` required):

@@ -8,3 +8,7 @@
 # Python
 __pycache__/
 *.pyc
+
+# Local profiling artifacts
+/tools/tmp_profile_files.txt
+
