@@ -3,6 +3,26 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+fn normalize_newlines(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'\r' {
+            if let Some(b'\n') = bytes.get(i + 1) {
+                out.push(b'\n');
+                i += 2;
+                continue;
+            }
+        }
+
+        out.push(bytes[i]);
+        i += 1;
+    }
+
+    out
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -99,19 +119,24 @@ fn python_and_rust_outputs_match_on_fixtures() {
     let py_code = py.status.code().expect("python exit code missing");
     let rs_code = rs.status.code().expect("rust exit code missing");
 
+    let py_stdout = normalize_newlines(&py.stdout);
+    let rs_stdout = normalize_newlines(&rs.stdout);
+    let py_stderr = normalize_newlines(&py.stderr);
+    let rs_stderr = normalize_newlines(&rs.stderr);
+
     assert_eq!(
-        py.stdout,
-        rs.stdout,
+        py_stdout,
+        rs_stdout,
         "stdout mismatch\n\npython stdout:\n{}\n\nrust stdout:\n{}\n",
-        String::from_utf8_lossy(&py.stdout),
-        String::from_utf8_lossy(&rs.stdout)
+        String::from_utf8_lossy(&py_stdout),
+        String::from_utf8_lossy(&rs_stdout)
     );
     assert_eq!(
-        py.stderr,
-        rs.stderr,
+        py_stderr,
+        rs_stderr,
         "stderr mismatch\n\npython stderr:\n{}\n\nrust stderr:\n{}\n",
-        String::from_utf8_lossy(&py.stderr),
-        String::from_utf8_lossy(&rs.stderr)
+        String::from_utf8_lossy(&py_stderr),
+        String::from_utf8_lossy(&rs_stderr)
     );
     assert_eq!(py_code, rs_code, "exit code mismatch");
 }
