@@ -164,7 +164,7 @@ fn parse_args(args: Vec<OsString>) -> Args {
     let mut inputs: Vec<PathBuf> = Vec::new();
     let mut pprof_out: Option<PathBuf> = None;
 
-    #[cfg(feature = "pprof")]
+    #[cfg(all(feature = "pprof", unix))]
     let mut pprof_frequency_hz: i32 = 100;
 
     let mut i = 0usize;
@@ -185,7 +185,7 @@ fn parse_args(args: Vec<OsString>) -> Args {
             }
         }
 
-        #[cfg(feature = "pprof")]
+        #[cfg(all(feature = "pprof", unix))]
         if args[i] == "--pprof-frequency" {
             if let Some(v) = args.get(i + 1).and_then(|v| v.to_str()) {
                 if let Ok(parsed) = v.parse::<i32>() {
@@ -204,7 +204,7 @@ fn parse_args(args: Vec<OsString>) -> Args {
         pack_path,
         input_paths: inputs,
         pprof_out,
-        #[cfg(feature = "pprof")]
+        #[cfg(all(feature = "pprof", unix))]
         pprof_frequency_hz,
     }
 }
