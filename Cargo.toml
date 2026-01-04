@@ -13,3 +13,6 @@ authors = [
   "Rangi <sylvie.oukaour+rangi42@gmail.com>",
   "vulcandth <vulcandth@gmail.com>",
 ]
+repository = "https://github.com/vulcandth/rgbds-optimize"
+homepage = "https://github.com/vulcandth/rgbds-optimize"
+description = "RGBDS optimize.py port: scan Game Boy RGBDS assembly for suboptimal instruction patterns."
