@@ -50,21 +50,21 @@ post_date: "2026-01-04"
 
 Match the Python tool’s observable behavior before adding new features.
 
-- [ ] Confirm and document the exact output format:
-	- Pattern headers: `### {pattern_name} ###` (only when more than one pattern is enabled)
-	- Context label lines: `{filename}:{label_line_number}:{label_text}`
-	- Match lines: `{filename}:{line_number}:{original_line_text}`
-	- Blank line between files if anything printed for that file
-	- Final summary: `Found {N} instances.`
-	- Exit code equals `N`
-- [ ] Define file traversal ordering for stable output (sort paths, then process in order).
-- [ ] Define text decoding behavior:
-	- Python uses UTF-8 with `errors='strict'` and prints an error line on decode failure.
-	- Rust must match this behavior (either fail that file and continue, or reproduce the same message format).
-- [ ] Define whitespace normalization and comment stripping rules:
-	- Comments start at `;` (current script uses `partition(';')`).
-	- The printed `text` is the original line (minus trailing `\n`).
-	- The matched `code` is left-trimmed and has internal whitespace collapsed.
+- [x] Confirm and document the exact output format:
+  - Pattern headers: `### {pattern_name} ###` (only when more than one pattern is enabled)
+  - Context label lines: `{filename}:{label_line_number}:{label_text}`
+  - Match lines: `{filename}:{line_number}:{original_line_text}`
+  - Blank line between files if anything printed for that file
+  - Final summary: `Found {N} instances.`
+  - Exit code equals `N`
+- [x] Define file traversal ordering for stable output (sort paths, then process in order).
+- [x] Define text decoding behavior:
+  - Python uses UTF-8 with `errors='strict'` and prints an error line on decode failure.
+  - Rust must match this behavior (either fail that file and continue, or reproduce the same message format).
+- [x] Define whitespace normalization and comment stripping rules:
+  - Comments start at `;` (current script uses `partition(';')`).
+  - The printed `text` is the original line (minus trailing `\n`).
+  - The matched `code` is left-trimmed and has internal whitespace collapsed.
 
 ## 3. Assembly Line Parsing (RGBDS-Oriented, Not Pret-Oriented)
 
