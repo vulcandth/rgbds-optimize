@@ -1,0 +1,10 @@
+/target/
+**/*.rs.bk
+**/*.swp
+**/*.swo
+**/.DS_Store
+**/.vscode/
+
+# Python
+__pycache__/
+*.pyc
