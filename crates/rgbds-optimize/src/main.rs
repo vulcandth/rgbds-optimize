@@ -4,18 +4,18 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "pprof")]
+#[cfg(all(feature = "pprof", unix))]
 use std::fs::File;
 
 #[derive(Debug)]
 struct Args {
     pack_path: PathBuf,
     input_paths: Vec<PathBuf>,
-    #[cfg(feature = "pprof")]
+    #[cfg(all(feature = "pprof", unix))]
     pprof_out: Option<PathBuf>,
-    #[cfg(not(feature = "pprof"))]
+    #[cfg(not(all(feature = "pprof", unix)))]
     pprof_out: Option<PathBuf>,
-    #[cfg(feature = "pprof")]
+    #[cfg(all(feature = "pprof", unix))]
     pprof_frequency_hz: i32,
 }
 
@@ -24,7 +24,7 @@ fn main() {
 
     let args = parse_args(args);
 
-    #[cfg(not(feature = "pprof"))]
+    #[cfg(not(all(feature = "pprof", unix)))]
     if args.pprof_out.is_some() {
         eprintln!(
             "--pprof is not available in this build. Rebuild with: cargo run -p rgbds-optimize --features pprof -- <args>"
@@ -32,7 +32,7 @@ fn main() {
         std::process::exit(2);
     }
 
-    #[cfg(feature = "pprof")]
+    #[cfg(all(feature = "pprof", unix))]
     let pprof_guard = args
         .pprof_out
         .as_ref()
@@ -92,7 +92,7 @@ fn main() {
 
     println!("Found {} instances.", total_count);
 
-    #[cfg(feature = "pprof")]
+    #[cfg(all(feature = "pprof", unix))]
     if let (Some(out_path), Some(guard)) = (args.pprof_out.as_ref(), pprof_guard.as_ref()) {
         match guard.report().build() {
             Ok(report) => {
