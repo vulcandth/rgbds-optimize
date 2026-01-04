@@ -1,15 +1,16 @@
 [package]
-name = "optimize"
+name = "rgbds-optimize"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "optimize"
 path = "src/main.rs"
 
 [dependencies]
-optimize-core = { path = "../optimize-core" }
+optimize-core = { package = "rgbds-optimize-core", path = "../optimize-core" }
 pprof = { version = "0.13", optional = true, features = ["flamegraph"] }
 
 [features]

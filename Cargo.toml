@@ -9,3 +9,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+authors = [
+  "Rangi <sylvie.oukaour+rangi42@gmail.com>",
+  "vulcandth <vulcandth@gmail.com>",
+]

@@ -32,13 +32,13 @@ This repository contains:
 - Run on a directory (defaults to `configs/rgbds.toml`):
 
 ```bash
-cargo run --release -p optimize -- .
+cargo run --release -p rgbds-optimize -- .
 ```
 
 - Run with a specific pattern pack:
 
 ```bash
-cargo run --release -p optimize -- --pack configs/pret.toml path/to/repo
+cargo run --release -p rgbds-optimize -- --pack configs/pret.toml path/to/repo
 ```
 
 ### Python (reference)
@@ -130,20 +130,20 @@ Profiling options:
 - Rust (Linux, requires system `perf`):
 
 ```bash
-perf record -g -- cargo run --release -p optimize -- --pack configs/pret.toml /path/to/repo
+perf record -g -- cargo run --release -p rgbds-optimize -- --pack configs/pret.toml /path/to/repo
 ```
 
 - Rust (flamegraph wrapper, requires `perf`):
 
 ```bash
 cargo install flamegraph
-cargo flamegraph -p optimize --root -- --pack configs/pret.toml /path/to/repo
+cargo flamegraph -p rgbds-optimize --root -- --pack configs/pret.toml /path/to/repo
 ```
 
 - Rust (`pprof` feature, useful where `perf` is difficult to install):
 
 ```bash
-cargo run --release -p optimize --features pprof -- --pack configs/pret.toml --pprof /tmp/optimize.svg --pprof-frequency 1000 /path/to/repo
+cargo run --release -p rgbds-optimize --features pprof -- --pack configs/pret.toml --pprof /tmp/optimize.svg --pprof-frequency 1000 /path/to/repo
 ```
 
 - Python:

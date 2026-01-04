@@ -27,7 +27,7 @@ fn main() {
     #[cfg(not(feature = "pprof"))]
     if args.pprof_out.is_some() {
         eprintln!(
-            "--pprof is not available in this build. Rebuild with: cargo run -p optimize --features pprof -- <args>"
+            "--pprof is not available in this build. Rebuild with: cargo run -p rgbds-optimize --features pprof -- <args>"
         );
         std::process::exit(2);
     }

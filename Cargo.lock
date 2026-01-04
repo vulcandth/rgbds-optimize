@@ -337,23 +337,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
-name = "optimize"
-version = "0.1.0"
-dependencies = [
- "optimize-core",
- "pprof",
-]
-
-[[package]]
-name = "optimize-core"
-version = "0.1.0"
-dependencies = [
- "regex",
- "serde",
- "toml",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -475,6 +458,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "rgbds-optimize"
+version = "0.1.0"
+dependencies = [
+ "pprof",
+ "rgbds-optimize-core",
+]
+
+[[package]]
+name = "rgbds-optimize-core"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "toml",
 ]
 
 [[package]]
