@@ -43,7 +43,7 @@ fn main() {
         Err(err) => {
             eprintln!(
                 "Failed to read pack config {}: {}",
-                args.pack_path.display(),
+                format_path_for_output(&args.pack_path),
                 err
             );
             std::process::exit(2);
@@ -52,7 +52,11 @@ fn main() {
     let pack = match optimize_core::load_pattern_pack_toml(&pack_contents) {
         Ok(p) => p,
         Err(err) => {
-            eprintln!("Invalid pack config {}: {}", args.pack_path.display(), err);
+            eprintln!(
+                "Invalid pack config {}: {}",
+                format_path_for_output(&args.pack_path),
+                err
+            );
             std::process::exit(2);
         }
     };
@@ -73,7 +77,7 @@ fn main() {
 
     for path in input_paths {
         if !path.exists() {
-            eprintln!("File not found: {}", path.display());
+            eprintln!("File not found: {}", format_path_for_output(&path));
             continue;
         }
 
@@ -97,13 +101,16 @@ fn main() {
         match guard.report().build() {
             Ok(report) => {
                 let Ok(file) = File::create(out_path) else {
-                    eprintln!("Failed to write flamegraph to {}", out_path.display());
+                    eprintln!(
+                        "Failed to write flamegraph to {}",
+                        format_path_for_output(out_path)
+                    );
                     std::process::exit(2);
                 };
                 if let Err(err) = report.flamegraph(file) {
                     eprintln!(
                         "Failed to write flamegraph to {}: {}",
-                        out_path.display(),
+                        format_path_for_output(out_path),
                         err
                     );
                     std::process::exit(2);
@@ -209,6 +216,15 @@ fn parse_args(args: Vec<OsString>) -> Args {
     }
 }
 
+fn format_path_for_output(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    if cfg!(windows) {
+        s.replace('/', "\\")
+    } else {
+        s.into_owned()
+    }
+}
+
 fn optimize_file(
     path: &Path,
     pack: &optimize_core::PatternPack,
@@ -217,7 +233,7 @@ fn optimize_file(
     let bytes = match fs::read(path) {
         Ok(b) => b,
         Err(err) => {
-            println!("ERROR!!! {}: {}", path.display(), err);
+            println!("ERROR!!! {}: {}", format_path_for_output(path), err);
             println!();
             return 0;
         }
@@ -228,7 +244,7 @@ fn optimize_file(
         Err(err) => {
             // Keep the same outer format as optimize.py. Matching Python's exact decode error
             // wording can be done later if strict parity is required.
-            println!("ERROR!!! {}: {}", path.display(), err);
+            println!("ERROR!!! {}: {}", format_path_for_output(path), err);
             println!();
             return 0;
         }
@@ -239,7 +255,7 @@ fn optimize_file(
         return 0;
     }
 
-    let filename = path.display().to_string();
+    let filename = format_path_for_output(path);
     let matches = optimize_core::run_pack_on_lines(&filename, &lines, pack);
 
     let mut printed_any = false;
