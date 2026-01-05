@@ -29,7 +29,7 @@ This repository contains:
 
 ### Rust (recommended)
 
-- Run on a directory (defaults to `configs/rgbds.toml`):
+- Run on a directory (defaults to `configs/rgbds.yaml`):
 
 ```bash
 cargo run --release -- .
@@ -38,7 +38,7 @@ cargo run --release -- .
 - Run with a specific pattern pack:
 
 ```bash
-cargo run --release -- --pack configs/pret.toml path/to/repo
+cargo run --release -- --pack configs/pret.yaml path/to/repo
 ```
 
 ### Python (reference)
@@ -49,28 +49,36 @@ python3 optimize.py path/to/repo
 
 ## Pattern Packs
 
-Pattern packs are TOML files under `configs/`.
+Pattern packs are YAML files under `configs/`. Each file embeds two sections:
 
-- `pack` (string): a human-friendly pack identifier.
-- `[[pattern]]` entries define the patterns to run.
+- `builtins`: named optimization definitions. A builtin contains `steps`, where
+  each step is a regex (compiled at runtime), literal `equals` match, or a
+  registered `function` condition.
+- `patterns`: the ordered list of optimizations to run for the pack. Each
+  pattern references a builtin and can toggle `enabled_by_default` or add a
+  description.
 
 Example:
 
-```toml
-pack = "pret"
+```yaml
+pack: "core"
 
-[[pattern]]
-name = "No-op ld"
-builtin = "py_no_op_ld"
-enabled_by_default = true
-description = "Flags ld r,r where the destination equals the source."
+builtins:
+  no_op_ld:
+    steps:
+      - regex: '^ld ([abcdehl]), \1$'
+
+patterns:
+  - name: "No-op ld"
+    builtin: "no_op_ld"
+    enabled_by_default: true
+    description: "Flags ld r,r where the destination equals the source."
 ```
 
 Notes:
 
-- `builtin` refers to a built-in pattern implementation in the Rust codebase.
-- `enabled_by_default` controls whether the CLI runs it by default.
-- Output order is the order of patterns in the TOML.
+- Regex strings are compiled when the YAML is loaded.
+- Output order is the order of patterns in the YAML file.
 
 ## Compatibility
 
@@ -92,7 +100,7 @@ python3 tools/parity.py /path/to/repo
 - Run with a specific pack and release profile:
 
 ```bash
-python3 tools/parity.py --pack configs/pret.toml --cargo-profile release /path/to/repo
+python3 tools/parity.py --pack configs/pret.yaml --cargo-profile release /path/to/repo
 ```
 
 CI parity against a pinned `pret/pokecrystal` commit is implemented in `.github/workflows/parity-pokecrystal.yml`.
@@ -102,7 +110,7 @@ CI parity against a pinned `pret/pokecrystal` commit is implemented in `.github/
 A deterministic timing harness exists at `tools/bench.py`.
 
 ```bash
-python3 tools/bench.py --pack configs/pret.toml /path/to/repo
+python3 tools/bench.py --pack configs/pret.yaml /path/to/repo
 ```
 
 ## Third-Party Licenses
@@ -130,20 +138,20 @@ Profiling options:
 - Rust (Linux, requires system `perf`):
 
 ```bash
-perf record -g -- cargo run --release -- --pack configs/pret.toml /path/to/repo
+perf record -g -- cargo run --release -- --pack configs/pret.yaml /path/to/repo
 ```
 
 - Rust (flamegraph wrapper, requires `perf`):
 
 ```bash
 cargo install flamegraph
-cargo flamegraph --root -- --pack configs/pret.toml /path/to/repo
+cargo flamegraph --root -- --pack configs/pret.yaml /path/to/repo
 ```
 
 - Rust (`pprof` feature, useful where `perf` is difficult to install):
 
 ```bash
-cargo run --release --features pprof -- --pack configs/pret.toml --pprof /tmp/optimize.svg --pprof-frequency 1000 /path/to/repo
+cargo run --release --features pprof -- --pack configs/pret.yaml --pprof /tmp/optimize.svg --pprof-frequency 1000 /path/to/repo
 ```
 
 - Python:
@@ -157,7 +165,7 @@ python3 -m pstats /tmp/optimize.prof
 
 When adding or changing patterns:
 
-- Prefer updating TOML packs in `configs/` and referencing an existing built-in `builtin`.
+- Prefer updating YAML packs in `configs/` and referencing an existing built-in `builtin`.
 - If new logic is needed, add a new built-in pattern and keep it self-contained.
 - Add fixture coverage under `tests/fixtures/parity/`.
 - Run `cargo test` and `python3 tools/parity.py <repo>` (or CI) before sending a PR.

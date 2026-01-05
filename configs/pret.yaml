@@ -1,0 +1,456 @@
+pack: pret
+
+builtins:
+  py_redundant_arguments:
+    steps:
+      - regex: '^(?:add|adc|sub|sbc|and|xor|or|cp) a,'
+  py_nops:
+    steps:
+      - regex: '^(?!halt$).+'
+      - equals: 'nop'
+  py_no_op_ld:
+    steps:
+      - function: cond_no_op_ld_python
+  py_no_op_add_sub:
+    steps:
+      - regex: '^(?:add|sub) (?:a, )?(?:[%\$&]?0+|FALSE)$'
+  py_inefficient_hram_load:
+    steps:
+      - function: cond_inefficient_hram_load
+  py_inefficient_hram_store:
+    steps:
+      - function: cond_inefficient_hram_store
+  py_a_eq_0:
+    steps:
+      - regex: '^ld a, (?:[%\$&]?0+|FALSE)$'
+  py_a_inc_dec:
+    steps:
+      - regex: '^(?:add|sub) (?:a, )?[%\$&]?0*1$'
+  py_a_times_2:
+    steps:
+      - equals: 'sla a'
+  py_a_not:
+    steps:
+      - regex: '^xor (?:255|-[$%&]?0*1|\$[Ff][Ff]|%11111111|&377)$'
+  py_a_eq_n_minus_a:
+    steps:
+      - regex: '^ld [bcdehl], a'
+      - regex: '^ld a, [^afbcdehl\[]'
+      - function: cond_a_eq_n_minus_a_step3
+  py_a_eq_carry_pq:
+    steps:
+      - regex: '^ld a, [^afbcdehl\[]'
+      - regex: '^(jr|jp|jmp) n?c,'
+      - function: cond_a_carry_pq_step3
+      - function: jump_target_prev1
+  py_a_inc_dec_if_carry:
+    steps:
+      - regex: '^(jr|jp|jmp) nc,'
+      - regex: '^(?:inc|dec) a$'
+      - rewind: 1
+        function: jump_target_prev0
+  py_a_inc_dec_if_not_carry:
+    steps:
+      - regex: '^(jr|jp|jmp) c,'
+      - regex: '^(?:inc|dec) a$'
+      - rewind: 1
+        function: jump_target_prev0
+  py_a_shift_right_3:
+    steps:
+      - regex: '^srl a$'
+      - regex: '^srl a$'
+      - regex: '^srl a$'
+  py_a_eq_x_plusminus_carry:
+    steps:
+      - regex: '^ld ([bcdehl]|\[hl\]), a'
+      - function: cond_a_eq_x_plusminus_carry_step2
+      - regex: '^(adc|sbc) [%\$&]?0+$'
+  py_a_eq_carry_plusminus_x:
+    steps:
+      - regex: '^ld ([bcdehl]|\[hl\]), a'
+      - regex: '^ld a, [%\$&]?0+$'
+      - function: cond_a_eq_carry_plusminus_x_step3
+  py_reg_conditional_ternary:
+    steps:
+      - regex: '^(jr|jp|jmp) n?[zc],'
+      - regex: '^ldh? [abcdehl],'
+      - function: cond_unconditional_jump_no_comma
+      - function: jump_target_prev0
+      - function: cond_reg_conditional_ternary_step5
+      - function: cond_reg_conditional_ternary_step6
+  py_a_and_x_eq_x:
+    steps:
+      - regex: '^and (?:a, )?[^afbcdehl\[]'
+      - function: cond_and_cp_same_operand
+  py_a_mask_or:
+    steps:
+      - regex: '^and (?:a, )?[^afbcdehl\[]'
+      - regex: '^ld [bcdehl], a$'
+      - function: cond_a_mask_or_step3
+      - regex: '^and (?:a, )?[^afbcdehl\[]'
+      - function: cond_mask_or_step5
+  py_pair_add_a_or_n:
+    steps:
+      - regex: '^add (?:a, )?(?:[lce]|[^afbdh\[])'
+      - function: cond_pair_add_step2
+      - function: cond_pair_add_step3
+      - function: cond_pair_add_step4
+      - function: cond_pair_add_step5
+  py_pair_add_a_or_n_jump:
+    steps:
+      - regex: '^add (?:a, )?(?:[lce]|[^afbdh\[])'
+      - function: cond_pair_add_step2
+      - regex: '^(jr|jp|jmp) nc,'
+      - function: cond_pair_add_jump_step4
+      - function: jump_target_prev2
+  py_pair_eq_foo_plus_a:
+    steps:
+      - regex: '^ld (?:hl|bc|de), [^\[]'
+      - function: cond_pair_eq_foo_plus_a_step2
+      - function: cond_pair_eq_foo_plus_a_step3
+      - function: cond_pair_eq_foo_plus_a_step4
+      - function: cond_pair_eq_foo_plus_a_step5
+      - function: cond_pair_eq_foo_plus_a_step6
+  py_reg_plus_carry:
+    steps:
+      - regex: '^ld a, (?:[bcdehl]|[%\$&]?0+$)'
+      - regex: '^adc (?:[bcdehl]|[%\$&]?0+$)'
+      - function: cond_reg_plus_minus_carry_step3
+  py_reg_minus_carry:
+    steps:
+      - regex: '^ld a, (?:[bcdehl]|[%\$&]?0+$)'
+      - regex: '^sbc (?:[bcdehl]|[%\$&]?0+$)'
+      - function: cond_reg_plus_minus_carry_step3
+  py_pair_eq_a_mul_16:
+    steps:
+      - function: cond_pair_eq_a_mul_16_step1
+      - function: cond_pair_eq_a_mul_16_step2
+      - function: cond_pair_eq_a_mul_16_add
+      - function: cond_pair_eq_a_mul_16_add
+      - function: cond_pair_eq_a_mul_16_add
+      - function: cond_pair_eq_a_mul_16_add
+  py_pair_eq_a_mul_16_rept:
+    steps:
+      - function: cond_pair_eq_a_mul_16_step1
+      - function: cond_pair_eq_a_mul_16_step2
+      - regex: '(?i)^rept 4$'
+      - function: cond_pair_eq_a_mul_16_add
+      - regex: '(?i)^endr$'
+  py_hl_mul_2:
+    steps:
+      - equals: 'sla l'
+      - equals: 'rl h'
+  py_pair_eq_deref_foo:
+    steps:
+      - regex: '^ld a, \[[^hbd]'
+      - regex: '^ld [lh], a$'
+      - function: cond_pair_eq_deref_foo_step3
+      - function: cond_pair_eq_deref_foo_step4
+  py_pair_load_pq:
+    steps:
+      - regex: '^ld [bcdehl], [^afbcdehl\[]'
+      - function: cond_pair_load_pq_step2
+  py_deref_hl_eq_n:
+    steps:
+      - regex: '^ld a, [^afbcdehl\[]'
+      - equals: 'ld [hl], a'
+  py_deref_hl_inc_dec:
+    steps:
+      - equals: 'ld a, [hl]'
+      - regex: '^(?:inc|dec) a$'
+      - rewind: 1
+        equals: 'ld [hl], a'
+  py_deref_hl_inc_dec_eq_a:
+    steps:
+      - equals: 'ld [hl], a'
+      - regex: '^(?:inc|dec) hl$'
+  py_deref_hl_inc_dec_eq_n:
+    steps:
+      - regex: '^ld \[hl\], [^afbcdehl\[]'
+      - regex: '^(?:inc|dec) hl$'
+  py_a_eq_deref_hl_inc_dec:
+    steps:
+      - equals: 'ld a, [hl]'
+      - regex: '^(?:inc|dec) hl$'
+  py_deref_hl_inc_dec_eq_r:
+    steps:
+      - regex: '^ld \[hl\], [bcdehl]$'
+      - regex: '^(?:inc|dec) hl$'
+  py_r_eq_deref_hl_inc_dec:
+    steps:
+      - regex: '^ld [bcde], \[hl\]$'
+      - regex: '^(?:inc|dec) hl$'
+  py_a_eq_0_cmp:
+    steps:
+      - function: cond_a_eq_0_cmp
+  py_a_eq_1_cmp:
+    steps:
+      - regex: '^cp [%\$&]?0*1$'
+  py_ei_ret:
+    steps:
+      - equals: 'ei'
+      - equals: 'ret'
+  py_tail_call:
+    steps:
+      - function: cond_tail_call
+      - equals: 'ret'
+  py_tail_farcall:
+    steps:
+      - function: cond_tail_farcall
+      - equals: 'ret'
+  py_tail_predef:
+    steps:
+      - function: cond_tail_predef
+      - equals: 'ret'
+  py_fallthrough:
+    steps:
+      - function: cond_tail_call
+      - equals: 'ret'
+      - function: cond_fallthrough_label
+  py_conditional_call:
+    steps:
+      - regex: '^(jr|jp|jmp) n?[zc],'
+      - function: cond_tail_call
+      - function: cond_conditional_call_step3
+  py_conditional_return:
+    steps:
+      - regex: '^(jr|jp|jmp) n?[zc],'
+      - equals: 'ret'
+      - function: jump_target_prev0
+  py_conditional_fallthrough:
+    steps:
+      - regex: '^(jr|jp|jmp) n?[zc],'
+      - function: cond_unconditional_jump_no_comma
+      - function: jump_target_prev0
+  py_call_hl:
+    steps:
+      - regex: '^ld (?:bc|de), [^hbd]'
+      - function: cond_call_hl_step2
+      - equals: 'jp hl'
+      - function: cond_call_hl_step4
+  py_pointless_hli_hld:
+    steps:
+      - regex: '^(?:ld a, \[hl[-+id]\]|ld \[hl[-+id]\], a)$'
+      - rewind: 1
+        function: cond_pointless_hli_hld_step2
+      - regex: '^(?:ld hl,|pop hl)'
+  py_pointless_jumps:
+    steps:
+      - function: cond_pointless_jumps_step1
+      - function: cond_pointless_jumps_step2
+  py_useless_loads:
+    steps:
+      - function: cond_useless_loads_step1
+      - function: cond_useless_loads_step2
+  py_redundant_loads:
+    steps:
+      - function: cond_useless_loads_step1
+      - function: cond_redundant_loads_step2
+  py_similar_loads:
+    steps:
+      - function: cond_similar_loads_step1
+      - function: cond_similar_loads_step2
+  py_conditionally_load_0:
+    steps:
+      - function: cond_conditionally_load_zero_step1
+      - regex: '^(jr|jp|jmp) nz,'
+      - regex: '^ld .+, [%\$&]?0+$'
+  py_inefficient_prefix_opcodes:
+    steps:
+      - regex: '^(?:rl|rlc|rr|rrc) a$'
+  py_redundant_and_or:
+    steps:
+      - regex: '^(?:and|or|xor) '
+      - regex: '^(?:and a|or a|and a, a|or a, a)$'
+  py_pointless_and_or_a:
+    steps:
+      - regex: '^(?:and a|or a|and a, a|or a, a)$'
+      - regex: '^(?:rlca|rrca|rla|rra|daa|pop af|add |adc |sub |sbc |and |or |xor |cp |rlc |rrc |rl |rr |sla |sra |swap |srl |ld hl, sp|ldhl sp)'
+  py_redundant_inc_dec:
+    steps:
+      - regex: '^ld .+, [^afbcdehl\[]'
+      - function: cond_redundant_inc_dec_step2
+  py_pair_eq_n_then_other_then_add:
+    steps:
+      - regex: '^ld (?:hl|bc|de), [^\[]'
+      - function: cond_pair_eq_n_then_other_then_add_step2
+      - rewind: 1
+        function: cond_pair_three_step3
+  py_pair_eq_n_then_inc_dec:
+    steps:
+      - regex: '^ld (?:hl|bc|de), [^\[]'
+      - rewind: 1
+        function: cond_pair_dotdot_step2
+      - rewind: 1
+        function: cond_pair_dotdot_incdec
+  py_pair_eq_n_and_other_add:
+    steps:
+      - regex: '^ld (?:hl|bc|de), [^\[]'
+      - rewind: 1
+        function: cond_pair_dotdot_step2
+      - regex: '^ld (?:hl|bc|de), [^\[]'
+      - rewind: 1
+        function: cond_pair_three_step3
+  py_dec_a_then_addntimes:
+    steps:
+      - regex: '^ld hl, [^\[]'
+      - function: cond_dec_a_then_addntimes_step2
+      - function: cond_dec_a_then_addntimes_step3
+      - regex: '^(?:call|rst) AddNTimes'
+  py_redundant_ret:
+    steps:
+      - regex: '^ret(?: .+)?$'
+      - function: cond_redundant_ret_step2
+  py_stub_function:
+    steps:
+      - function: cond_label_definition
+      - equals: 'ret'
+  py_stub_jump:
+    steps:
+      - function: cond_label_definition
+      - regex: '^jr [^,]+$'
+  py_wram_inc_dec:
+    steps:
+      - regex: '^ld a, \[w'
+      - regex: '^(?:inc|dec) a$'
+      - function: cond_wram_inc_dec_step3
+  py_trailing_string_space:
+    steps:
+      - regex: '^(?:text|next1?|line|page|para|cont|prompt)\s*"[^"]* "'
+      - function: cond_trailing_string_space_step2
+
+patterns:
+  - name: "Redundant arguments"
+    builtin: "py_redundant_arguments"
+  - name: "nops"
+    builtin: "py_nops"
+  - name: "No-op ld"
+    builtin: "py_no_op_ld"
+  - name: "No-op add|sub"
+    builtin: "py_no_op_add_sub"
+  - name: "Inefficient HRAM load"
+    builtin: "py_inefficient_hram_load"
+  - name: "Inefficient HRAM store"
+    builtin: "py_inefficient_hram_store"
+  - name: "a = 0"
+    builtin: "py_a_eq_0"
+  - name: "a++|a--"
+    builtin: "py_a_inc_dec"
+  - name: "a *= 2"
+    builtin: "py_a_times_2"
+  - name: "a = ~a"
+    builtin: "py_a_not"
+  - name: "a = N - a"
+    builtin: "py_a_eq_n_minus_a"
+  - name: "a = carry ? P : Q"
+    builtin: "py_a_eq_carry_pq"
+  - name: "a++|a-- if carry"
+    builtin: "py_a_inc_dec_if_carry"
+  - name: "a++|a-- if not carry"
+    builtin: "py_a_inc_dec_if_not_carry"
+  - name: "a = a >> 3"
+    builtin: "py_a_shift_right_3"
+  - name: "a = X +/- carry"
+    builtin: "py_a_eq_x_plusminus_carry"
+  - name: "a = carry +/- X"
+    builtin: "py_a_eq_carry_plusminus_x"
+  - name: "a|b|c|d|e|h|l = z|nz|c|nc ? P : Q"
+    builtin: "py_reg_conditional_ternary"
+  - name: "a & X == X"
+    builtin: "py_a_and_x_eq_x"
+  - name: "a = (a & MASK) | (b|c|d|e|h|l & ~MASK)"
+    builtin: "py_a_mask_or"
+  - name: "hl|bc|de += a|N"
+    builtin: "py_pair_add_a_or_n"
+  - name: "hl|bc|de += a|N (jump)"
+    builtin: "py_pair_add_a_or_n_jump"
+  - name: "hl|bc|de = Foo + a"
+    builtin: "py_pair_eq_foo_plus_a"
+  - name: "b|c|d|e|h|l += carry"
+    builtin: "py_reg_plus_carry"
+  - name: "b|c|d|e|h|l -= carry"
+    builtin: "py_reg_minus_carry"
+  - name: "hl|bc|de = a * 16"
+    builtin: "py_pair_eq_a_mul_16"
+  - name: "hl|bc|de = a * 16 (rept)"
+    builtin: "py_pair_eq_a_mul_16_rept"
+  - name: "hl *= 2"
+    builtin: "py_hl_mul_2"
+  - name: "hl = *Foo"
+    builtin: "py_pair_eq_deref_foo"
+  - name: "h,l|b,c|d,e = P,Q"
+    builtin: "py_pair_load_pq"
+  - name: "*hl = N"
+    builtin: "py_deref_hl_eq_n"
+  - name: "*hl++|*hl--"
+    builtin: "py_deref_hl_inc_dec"
+  - name: "*hl++|*hl-- = a"
+    builtin: "py_deref_hl_inc_dec_eq_a"
+  - name: "*hl++|*hl-- = N"
+    builtin: "py_deref_hl_inc_dec_eq_n"
+  - name: "a = *hl++|*hl--"
+    builtin: "py_a_eq_deref_hl_inc_dec"
+  - name: "*hl++|*hl-- = b|c|d|e"
+    builtin: "py_deref_hl_inc_dec_eq_r"
+  - name: "b|c|d|e = *hl++|*hl--"
+    builtin: "py_r_eq_deref_hl_inc_dec"
+  - name: "a == 0"
+    builtin: "py_a_eq_0_cmp"
+  - name: "a == 1"
+    builtin: "py_a_eq_1_cmp"
+  - name: "ei + ret"
+    builtin: "py_ei_ret"
+  - name: "Tail call"
+    builtin: "py_tail_call"
+  - name: "Tail farcall"
+    builtin: "py_tail_farcall"
+  - name: "Tail predef"
+    builtin: "py_tail_predef"
+  - name: "Fallthrough"
+    builtin: "py_fallthrough"
+  - name: "Conditional call"
+    builtin: "py_conditional_call"
+  - name: "Conditional return"
+    builtin: "py_conditional_return"
+  - name: "Conditional fallthrough"
+    builtin: "py_conditional_fallthrough"
+  - name: "call hl"
+    builtin: "py_call_hl"
+  - name: "Pointless hli|hld"
+    builtin: "py_pointless_hli_hld"
+  - name: "Pointless jumps"
+    builtin: "py_pointless_jumps"
+  - name: "Useless loads"
+    builtin: "py_useless_loads"
+  - name: "Redundant loads"
+    builtin: "py_redundant_loads"
+  - name: "Similar loads"
+    builtin: "py_similar_loads"
+  - name: "Conditionally load 0"
+    builtin: "py_conditionally_load_0"
+  - name: "Inefficient prefix opcodes"
+    builtin: "py_inefficient_prefix_opcodes"
+  - name: "Redundant and|or"
+    builtin: "py_redundant_and_or"
+  - name: "Pointless and|or a"
+    builtin: "py_pointless_and_or_a"
+  - name: "Redundant inc|dec"
+    builtin: "py_redundant_inc_dec"
+  - name: "hl|bc|de = N / bc|de|hl = K / hl|bc|de += bc|de|hl"
+    builtin: "py_pair_eq_n_then_other_then_add"
+  - name: "hl|bc|de = N / ... / inc|dec hl|bc|de"
+    builtin: "py_pair_eq_n_then_inc_dec"
+  - name: "hl|bc|de = N / ... / bc|de|hl = K / hl|bc|de += bc|de|hl"
+    builtin: "py_pair_eq_n_and_other_add"
+  - name: "dec a, then AddNTimes"
+    builtin: "py_dec_a_then_addntimes"
+  - name: "Redundant ret"
+    builtin: "py_redundant_ret"
+  - name: "Stub function"
+    builtin: "py_stub_function"
+  - name: "Stub jump"
+    builtin: "py_stub_jump"
+  - name: "Inefficient WRAM increment/decrement"
+    builtin: "py_wram_inc_dec"
+  - name: "Trailing string space"
+    builtin: "py_trailing_string_space"

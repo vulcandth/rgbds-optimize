@@ -74,7 +74,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let pack = match optimize_core::load_pattern_pack_toml(&pack_contents) {
+    let pack = match optimize_core::load_pattern_pack_yaml(&pack_contents) {
         Ok(p) => p,
         Err(err) => {
             eprintln!(
@@ -195,7 +195,7 @@ fn gather_asm_files_sorted(root: &Path) -> Vec<PathBuf> {
 }
 
 fn parse_args(args: Vec<OsString>) -> Args {
-    let mut pack_path: PathBuf = PathBuf::from("configs/rgbds.toml");
+    let mut pack_path: PathBuf = PathBuf::from("configs/rgbds.yaml");
     let mut inputs: Vec<PathBuf> = Vec::new();
     let mut file_list_path: Option<PathBuf> = None;
     let mut pprof_out: Option<PathBuf> = None;

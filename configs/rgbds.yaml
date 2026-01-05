@@ -1,0 +1,51 @@
+pack: rgbds
+
+builtins:
+  py_redundant_arguments:
+    steps:
+      - regex: '^(?:add|adc|sub|sbc|and|xor|or|cp) a,'
+  py_nops:
+    steps:
+      - regex: '^(?!halt$).+'
+      - equals: 'nop'
+  py_no_op_ld:
+    steps:
+      - function: cond_no_op_ld_python
+  no_op_add_sub:
+    steps:
+      - function: cond_no_op_add_sub_rust
+  py_a_eq_0:
+    steps:
+      - regex: '^ld a, (?:[%\$&]?0+|FALSE)$'
+  py_a_inc_dec:
+    steps:
+      - regex: '^(?:add|sub) (?:a, )?[%\$&]?0*1$'
+  py_a_times_2:
+    steps:
+      - equals: 'sla a'
+  py_a_not:
+    steps:
+      - regex: '^xor (?:255|-[$%&]?0*1|\$[Ff][Ff]|%11111111|&377)$'
+  ld_a_from_hli:
+    steps:
+      - function: cond_ld_a_from_hli
+
+patterns:
+  - name: "Redundant arguments"
+    builtin: "py_redundant_arguments"
+  - name: "nops"
+    builtin: "py_nops"
+  - name: "No-op ld"
+    builtin: "py_no_op_ld"
+  - name: "No-op add|sub"
+    builtin: "no_op_add_sub"
+  - name: "a = 0"
+    builtin: "py_a_eq_0"
+  - name: "a++|a--"
+    builtin: "py_a_inc_dec"
+  - name: "a *= 2"
+    builtin: "py_a_times_2"
+  - name: "a = ~a"
+    builtin: "py_a_not"
+  - name: "Load a from [hli]/[hl+]"
+    builtin: "ld_a_from_hli"

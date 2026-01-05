@@ -19,7 +19,7 @@ path = "src/main.rs"
 [dependencies]
 fancy-regex = "0.17"
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+serde_yaml = "0.9"
 
 [target.'cfg(unix)'.dependencies]
 pprof = { version = "0.13", optional = true, features = ["flamegraph"] }

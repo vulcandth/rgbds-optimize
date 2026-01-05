@@ -4,10 +4,11 @@ mod pattern_config;
 mod patterns;
 
 pub use pattern_config::run_pack_on_lines;
-pub use pattern_config::{load_pattern_pack_toml, PatternPack};
+pub use pattern_config::{load_pattern_pack_yaml, PatternPack};
 use std::ops::Deref;
+use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FancyRegex(fancy_regex::Regex);
 
 impl FancyRegex {
@@ -177,43 +178,58 @@ pub fn is_rgbds_zero_literal(op: &str) -> bool {
     matches!(parse_rgbds_int(op), Some(0))
 }
 
-pub type ConditionFn = fn(&Line, &[Line]) -> bool;
+pub type ConditionFn = Arc<dyn Fn(&Line, &[Line]) -> bool + Send + Sync>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone)]
 pub enum StepCondition {
     Fn(ConditionFn),
-    Regex(&'static std::sync::LazyLock<FancyRegex>),
+    Regex(Arc<FancyRegex>),
 }
 
-#[derive(Copy, Clone, Debug)]
+impl std::fmt::Debug for StepCondition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StepCondition::Fn(_) => f.write_str("Fn(<dynamic>)"),
+            StepCondition::Regex(re) => f.debug_tuple("Regex").field(re).finish(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct PatternStep {
     pub rewind: Option<usize>,
     pub condition: StepCondition,
 }
 
 impl PatternStep {
-    pub fn new(condition: ConditionFn) -> Self {
+    pub fn new<F>(condition: F) -> Self
+    where
+        F: Fn(&Line, &[Line]) -> bool + Send + Sync + 'static,
+    {
         Self {
             rewind: None,
-            condition: StepCondition::Fn(condition),
+            condition: StepCondition::Fn(Arc::new(condition)),
         }
     }
 
-    pub fn regex(re: &'static std::sync::LazyLock<FancyRegex>) -> Self {
+    pub fn regex(re: Arc<FancyRegex>) -> Self {
         Self {
             rewind: None,
             condition: StepCondition::Regex(re),
         }
     }
 
-    pub fn with_rewind(rewind: usize, condition: ConditionFn) -> Self {
+    pub fn with_rewind<F>(rewind: usize, condition: F) -> Self
+    where
+        F: Fn(&Line, &[Line]) -> bool + Send + Sync + 'static,
+    {
         Self {
             rewind: Some(rewind),
-            condition: StepCondition::Fn(condition),
+            condition: StepCondition::Fn(Arc::new(condition)),
         }
     }
 
-    pub fn with_rewind_regex(rewind: usize, re: &'static std::sync::LazyLock<FancyRegex>) -> Self {
+    pub fn with_rewind_regex(rewind: usize, re: Arc<FancyRegex>) -> Self {
         Self {
             rewind: Some(rewind),
             condition: StepCondition::Regex(re),
@@ -253,10 +269,10 @@ pub fn find_pattern_instances(
             cur_label = Some(cur_line.clone());
         }
 
-        let step = steps[state];
+        let step = &steps[state];
         let skip = cur_line.comment_lower.starts_with(&suppress_prefix);
 
-        let matched = match step.condition {
+        let matched = match &step.condition {
             StepCondition::Fn(cond) => cond(cur_line, &prev_lines),
             StepCondition::Regex(re) => re.is_match(&cur_line.code),
         };

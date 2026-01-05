@@ -114,7 +114,7 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--pack",
         type=Path,
-        default=Path("configs/pret.toml"),
+        default=Path("configs/pret.yaml"),
         help="Pattern pack to use for the Rust binary.",
     )
     parser.add_argument(

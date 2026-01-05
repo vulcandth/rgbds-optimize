@@ -1,40 +1,48 @@
 #![forbid(unsafe_code)]
 
-use crate::{
-    canonicalize_rgbds_operand, find_pattern_instances, is_rgbds_zero_literal, parse_instruction,
-    Line, MatchInstance, PatternStep,
-};
+use crate::{find_pattern_instances, FancyRegex, Line, MatchInstance, PatternStep};
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct PatternPack {
     pub pack: String,
     pub patterns: Vec<PatternDefinition>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct PatternDefinition {
     pub name: String,
-    pub builtin: String,
     pub enabled_by_default: bool,
     pub description: Option<String>,
+    pub steps: Vec<PatternStep>,
 }
 
 #[derive(Debug)]
 pub enum ConfigError {
-    Toml(toml::de::Error),
+    Yaml(serde_yaml::Error),
     MissingPackName,
     EmptyPatterns,
     DuplicatePatternName(String),
-    UnknownBuiltin { pattern: String, builtin: String },
+    UnknownBuiltin {
+        pattern: String,
+        builtin: String,
+    },
+    UnknownFunction(String),
+    MissingSteps {
+        pattern: String,
+    },
+    Regex {
+        pattern: String,
+        error: fancy_regex::Error,
+    },
 }
 
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigError::Toml(err) => write!(f, "{err}"),
+            ConfigError::Yaml(err) => write!(f, "{err}"),
             ConfigError::MissingPackName => write!(f, "missing pack name"),
             ConfigError::EmptyPatterns => write!(f, "no patterns defined"),
             ConfigError::DuplicatePatternName(name) => {
@@ -43,6 +51,13 @@ impl std::fmt::Display for ConfigError {
             ConfigError::UnknownBuiltin { pattern, builtin } => {
                 write!(f, "unknown builtin '{builtin}' for pattern '{pattern}'")
             }
+            ConfigError::UnknownFunction(func) => write!(f, "unknown function '{func}'"),
+            ConfigError::MissingSteps { pattern } => {
+                write!(f, "pattern '{pattern}' is missing steps")
+            }
+            ConfigError::Regex { pattern, error } => {
+                write!(f, "invalid regex '{pattern}': {error}")
+            }
         }
     }
 }
@@ -50,63 +65,172 @@ impl std::fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 #[derive(Deserialize)]
-struct PatternPackToml {
+struct PatternPackYaml {
     pack: Option<String>,
-
     #[serde(default)]
-    pattern: Vec<PatternToml>,
+    patterns: Vec<PatternYaml>,
+    #[serde(default)]
+    builtins: HashMap<String, BuiltinYaml>,
 }
 
 #[derive(Deserialize)]
-struct PatternToml {
+struct PatternYaml {
     name: String,
-    builtin: String,
-
+    builtin: Option<String>,
     #[serde(default = "default_enabled")]
     enabled_by_default: bool,
-
     description: Option<String>,
+    steps: Option<Vec<StepYaml>>,
+}
+
+#[derive(Deserialize)]
+struct BuiltinYaml {
+    steps: Vec<StepYaml>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+struct StepYaml {
+    #[serde(default)]
+    rewind: Option<usize>,
+    regex: Option<String>,
+    equals: Option<String>,
+    function: Option<String>,
 }
 
 fn default_enabled() -> bool {
     true
 }
 
-pub fn load_pattern_pack_toml(contents: &str) -> Result<PatternPack, ConfigError> {
-    let parsed: PatternPackToml = toml::from_str(contents).map_err(ConfigError::Toml)?;
+pub fn load_pattern_pack_yaml(contents: &str) -> Result<PatternPack, ConfigError> {
+    let parsed: PatternPackYaml = serde_yaml::from_str(contents).map_err(ConfigError::Yaml)?;
     let pack = parsed.pack.ok_or(ConfigError::MissingPackName)?;
-    if parsed.pattern.is_empty() {
+    if parsed.patterns.is_empty() {
         return Err(ConfigError::EmptyPatterns);
     }
 
-    let mut seen = std::collections::BTreeSet::new();
-    let mut patterns = Vec::with_capacity(parsed.pattern.len());
-    for p in parsed.pattern {
-        if !seen.insert(p.name.clone()) {
-            return Err(ConfigError::DuplicatePatternName(p.name));
+    let mut seen = BTreeSet::new();
+    let mut definitions = Vec::with_capacity(parsed.patterns.len());
+
+    let mut regex_cache: HashMap<String, Arc<FancyRegex>> = HashMap::new();
+    let function_registry = crate::patterns::condition_registry();
+
+    for pattern in parsed.patterns {
+        if !seen.insert(pattern.name.clone()) {
+            return Err(ConfigError::DuplicatePatternName(pattern.name));
         }
-        patterns.push(PatternDefinition {
-            name: p.name,
-            builtin: p.builtin,
-            enabled_by_default: p.enabled_by_default,
-            description: p.description,
+
+        let steps_source = if let Some(steps) = pattern.steps {
+            steps
+        } else if let Some(builtin) = pattern.builtin.as_ref() {
+            parsed
+                .builtins
+                .get(builtin)
+                .map(|b| b.steps.clone())
+                .ok_or_else(|| ConfigError::UnknownBuiltin {
+                    pattern: pattern.name.clone(),
+                    builtin: builtin.clone(),
+                })?
+        } else {
+            Vec::new()
+        };
+
+        if steps_source.is_empty() {
+            return Err(ConfigError::MissingSteps {
+                pattern: pattern.name,
+            });
+        }
+
+        let steps = steps_source
+            .into_iter()
+            .map(|s| to_pattern_step(&pattern.name, s, &function_registry, &mut regex_cache))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        definitions.push(PatternDefinition {
+            name: pattern.name,
+            enabled_by_default: pattern.enabled_by_default,
+            description: pattern.description.or_else(|| {
+                pattern
+                    .builtin
+                    .as_ref()
+                    .and_then(|b| parsed.builtins.get(b).and_then(|b| b.description.clone()))
+            }),
+            steps,
         });
     }
 
-    // Ensure enabled patterns are runnable (disabled patterns may be placeholders).
-    for p in &patterns {
-        if !p.enabled_by_default {
-            continue;
+    Ok(PatternPack {
+        pack,
+        patterns: definitions,
+    })
+}
+
+fn to_pattern_step(
+    pattern_name: &str,
+    step: StepYaml,
+    function_registry: &HashMap<&'static str, crate::ConditionFn>,
+    regex_cache: &mut HashMap<String, Arc<FancyRegex>>,
+) -> Result<PatternStep, ConfigError> {
+    let mut chosen = 0usize;
+    if step.regex.is_some() {
+        chosen += 1;
+    }
+    if step.equals.is_some() {
+        chosen += 1;
+    }
+    if step.function.is_some() {
+        chosen += 1;
+    }
+    if chosen != 1 {
+        return Err(ConfigError::MissingSteps {
+            pattern: pattern_name.to_string(),
+        });
+    }
+
+    let condition = if let Some(regex) = step.regex {
+        let compiled = if let Some(existing) = regex_cache.get(&regex) {
+            existing.clone()
+        } else {
+            let compiled = FancyRegex::new(&regex).map_err(|error| ConfigError::Regex {
+                pattern: regex.clone(),
+                error,
+            })?;
+            let arc = Arc::new(compiled);
+            regex_cache.insert(regex.clone(), arc.clone());
+            arc
+        };
+        PatternStep::regex(compiled)
+    } else if let Some(eq) = step.equals {
+        let eq = Arc::new(eq);
+        PatternStep::new(move |line, _| line.code == *eq)
+    } else if let Some(func_name) = step.function {
+        let func = function_registry
+            .get(func_name.as_str())
+            .ok_or_else(|| ConfigError::UnknownFunction(func_name.clone()))?
+            .clone();
+        PatternStep {
+            rewind: step.rewind,
+            condition: crate::StepCondition::Fn(func),
         }
-        if builtin_pattern_steps(&p.builtin).is_none() {
-            return Err(ConfigError::UnknownBuiltin {
-                pattern: p.name.clone(),
-                builtin: p.builtin.clone(),
+    } else {
+        unreachable!()
+    };
+
+    if step.rewind.is_some() && matches!(condition.condition, crate::StepCondition::Regex(_)) {
+        // Attach rewind if caller requested it.
+        if let crate::StepCondition::Regex(re) = condition.condition.clone() {
+            return Ok(PatternStep {
+                rewind: step.rewind,
+                condition: crate::StepCondition::Regex(re),
             });
         }
     }
 
-    Ok(PatternPack { pack, patterns })
+    Ok(PatternStep {
+        rewind: step.rewind,
+        condition: condition.condition,
+    })
 }
 
 pub fn run_pack_on_lines(
@@ -120,83 +244,13 @@ pub fn run_pack_on_lines(
         if !pat.enabled_by_default {
             continue;
         }
-        if let Some(steps) = builtin_pattern_steps(&pat.builtin) {
-            let matches = find_pattern_instances(filename, lines, &pat.name, steps);
-            if !matches.is_empty() {
-                out.push((pat.name.clone(), matches));
-            }
+        let matches = find_pattern_instances(filename, lines, &pat.name, &pat.steps);
+        if !matches.is_empty() {
+            out.push((pat.name.clone(), matches));
         }
     }
 
     out
-}
-
-fn builtin_pattern_steps(builtin: &str) -> Option<&'static [PatternStep]> {
-    static CACHE: LazyLock<Mutex<HashMap<String, &'static [PatternStep]>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-
-    if let Ok(cache) = CACHE.lock() {
-        if let Some(hit) = cache.get(builtin).copied() {
-            return Some(hit);
-        }
-    }
-
-    let steps: Vec<PatternStep> = match builtin {
-        // Example: ld b, b (or other identical registers)
-        "no_op_ld" => Some(vec![PatternStep::new(|line, _prev| {
-            let Some(ins) = parse_instruction(&line.code) else {
-                return false;
-            };
-            if ins.mnemonic != "ld" || ins.operands.len() != 2 {
-                return false;
-            }
-            let left = ins.operands[0].to_ascii_lowercase();
-            let right = ins.operands[1].to_ascii_lowercase();
-            matches!(left.as_str(), "a" | "b" | "c" | "d" | "e" | "h" | "l") && left == right
-        })]),
-
-        // Example: add|sub 0 (including "add a, 0" forms in some code styles)
-        "no_op_add_sub" => Some(vec![PatternStep::new(|line, _prev| {
-            let Some(ins) = parse_instruction(&line.code) else {
-                return false;
-            };
-            if ins.mnemonic != "add" && ins.mnemonic != "sub" {
-                return false;
-            }
-
-            let imm = match ins.operands.as_slice() {
-                [op] => op,
-                [first, second] if first.eq_ignore_ascii_case("a") => second,
-                _ => return false,
-            };
-
-            let imm = imm.trim();
-            is_rgbds_zero_literal(imm)
-        })]),
-
-        // Example: [hl+] and [hli] should be treated equivalently in the future.
-        // This is a tiny demonstration hook: match "ld a, [hl+]" or "ld a, [hli]".
-        "ld_a_from_hli" => Some(vec![PatternStep::new(|line, _prev| {
-            let Some(ins) = parse_instruction(&line.code) else {
-                return false;
-            };
-            if ins.mnemonic != "ld" || ins.operands.len() != 2 {
-                return false;
-            }
-            let dst = ins.operands[0].to_ascii_lowercase();
-            let src = canonicalize_rgbds_operand(&ins.operands[1]);
-            dst == "a" && src == "[hli]"
-        })]),
-
-        _ => None,
-    }
-    .or_else(|| crate::patterns::steps(builtin))?;
-
-    let leaked: &'static [PatternStep] = Box::leak(steps.into_boxed_slice());
-    if let Ok(mut cache) = CACHE.lock() {
-        cache.insert(builtin.to_string(), leaked);
-    }
-    Some(leaked)
 }
 
 #[cfg(test)]
@@ -205,31 +259,38 @@ mod tests {
     use crate::preprocess_properties;
 
     #[test]
-    fn loads_pack_from_toml() {
-        let toml = r#"
-pack = "core"
-
-[[pattern]]
-name = "No-op ld"
-builtin = "no_op_ld"
+    fn loads_pack_from_yaml() {
+        let yaml = r#"
+pack: core
+builtins:
+  no_op_ld:
+    steps:
+      - regex: '^ld ([abcdehl]), \1$'
+patterns:
+  - name: "No-op ld"
+    builtin: "no_op_ld"
 "#;
 
-        let pack = load_pattern_pack_toml(toml).unwrap();
+        let pack = load_pattern_pack_yaml(yaml).unwrap();
         assert_eq!(pack.pack, "core");
         assert_eq!(pack.patterns.len(), 1);
         assert_eq!(pack.patterns[0].name, "No-op ld");
+        assert!(pack.patterns[0].enabled_by_default);
     }
 
     #[test]
     fn runs_enabled_builtin_patterns() {
-        let toml = r#"
-pack = "core"
-
-[[pattern]]
-name = "No-op ld"
-builtin = "no_op_ld"
+        let yaml = r#"
+pack: core
+builtins:
+  no_op_ld:
+    steps:
+      - regex: '^ld ([abcdehl]), \1$'
+patterns:
+  - name: "No-op ld"
+    builtin: "no_op_ld"
 "#;
-        let pack = load_pattern_pack_toml(toml).unwrap();
+        let pack = load_pattern_pack_yaml(yaml).unwrap();
 
         let lines = preprocess_properties("Label:\n  ld b, b\n");
         let got = run_pack_on_lines("file.asm", &lines, &pack);
@@ -240,12 +301,10 @@ builtin = "no_op_ld"
     }
 
     #[test]
-    fn pret_pack_can_be_empty_placeholder_in_repo_configs() {
-        // We intentionally allow projects to omit pret packs entirely.
-        // This test exists to ensure our loader enforces non-empty patterns.
-        let toml = "pack = \"pret\"\n";
+    fn empty_pack_is_rejected() {
+        let yaml = "pack: pret\n";
         assert!(matches!(
-            load_pattern_pack_toml(toml),
+            load_pattern_pack_yaml(yaml),
             Err(ConfigError::EmptyPatterns)
         ));
     }

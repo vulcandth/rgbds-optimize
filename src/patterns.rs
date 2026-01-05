@@ -1,5 +1,11 @@
-use crate::{FancyRegex as Regex, Line, PatternStep};
-use std::sync::LazyLock;
+#![allow(dead_code)] // Regex constants are retained for reference even when YAML drives step selection.
+
+use crate::{
+    canonicalize_rgbds_operand, is_rgbds_zero_literal, parse_instruction, ConditionFn,
+    FancyRegex as Regex, Line,
+};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock};
 
 fn is_volatile(code: &str) -> bool {
     [
@@ -768,348 +774,297 @@ fn cond_wram_inc_dec_step3(line: &Line, prev: &[Line]) -> bool {
     lhs == rhs
 }
 
-pub(crate) fn steps(builtin: &str) -> Option<Vec<PatternStep>> {
-    match builtin {
-        "py_redundant_arguments" => Some(vec![PatternStep::regex(&REDUNDANT_ARGUMENTS_RE)]),
-        "py_nops" => Some(vec![
-            PatternStep::new(|line, _| line.code != "halt"),
-            PatternStep::new(|line, _| line.code == "nop"),
-        ]),
-        "py_no_op_ld" => Some(vec![PatternStep::new(cond_no_op_ld_python)]),
-        "py_no_op_add_sub" => Some(vec![PatternStep::regex(&NO_OP_ADD_SUB_RE)]),
-        "py_inefficient_hram_load" => Some(vec![PatternStep::new(cond_inefficient_hram_load)]),
-        "py_inefficient_hram_store" => Some(vec![PatternStep::new(cond_inefficient_hram_store)]),
-        "py_a_eq_0" => Some(vec![PatternStep::regex(&A_EQ_0_RE)]),
-        "py_a_inc_dec" => Some(vec![PatternStep::regex(&A_INC_DEC_RE)]),
-        "py_a_times_2" => Some(vec![PatternStep::new(|line, _| line.code == "sla a")]),
-        "py_a_not" => Some(vec![PatternStep::regex(&A_NOT_RE)]),
-        "py_a_eq_n_minus_a" => Some(vec![
-            PatternStep::regex(&LD_R_A_RE),
-            PatternStep::regex(&LD_A_IMM_RE),
-            PatternStep::new(cond_a_eq_n_minus_a_step3),
-        ]),
-        "py_a_eq_carry_pq" => Some(vec![
-            PatternStep::regex(&LD_A_IMM_RE),
-            PatternStep::regex(&JUMP_NC_OR_C_RE),
-            PatternStep::new(cond_a_carry_pq_step3),
-            PatternStep::new(|line, prev| cond_jump_target_label(line, prev, 1)),
-        ]),
-        "py_a_inc_dec_if_carry" => Some(vec![
-            PatternStep::regex(&JUMP_NC_RE),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc a" | "dec a")),
-            PatternStep::with_rewind(1, |line, prev| cond_jump_target_label(line, prev, 0)),
-        ]),
-        "py_a_inc_dec_if_not_carry" => Some(vec![
-            PatternStep::regex(&JUMP_C_RE),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc a" | "dec a")),
-            PatternStep::with_rewind(1, |line, prev| cond_jump_target_label(line, prev, 0)),
-        ]),
-        "py_a_shift_right_3" => Some(vec![
-            PatternStep::regex(&SRL_A_RE),
-            PatternStep::regex(&SRL_A_RE),
-            PatternStep::regex(&SRL_A_RE),
-        ]),
-        "py_a_eq_x_plusminus_carry" => Some(vec![
-            PatternStep::regex(&LD_DST_A_RE),
-            PatternStep::new(cond_a_eq_x_plusminus_carry_step2),
-            PatternStep::regex(&ADC_SBC_0_RE),
-        ]),
-        "py_a_eq_carry_plusminus_x" => Some(vec![
-            PatternStep::regex(&LD_DST_A_RE),
-            PatternStep::regex(&LD_A_0_RE),
-            PatternStep::new(cond_a_eq_carry_plusminus_x_step3),
-        ]),
-        "py_reg_conditional_ternary" => Some(vec![
-            PatternStep::regex(&JUMP_NZ_OR_ZC_RE),
-            PatternStep::regex(&LDH_R_RE),
-            PatternStep::new(|line, _| {
-                JR_JP_JMP_ANY_RE.is_match(&line.code)
-                    && !line.code.contains(',')
-                    && line.code != "jp hl"
-            }),
-            PatternStep::new(|line, prev| cond_jump_target_label(line, prev, 0)),
-            PatternStep::new(|line, prev| {
-                if LDH_R_RE.is_match(&line.code) {
-                    return true;
-                }
-                (line.code == "xor a" || line.code == "xor a, a")
-                    && prev[1].code.starts_with("ld")
-                    && LDH_R_RE.is_match(&prev[1].code)
-                    && prev[1].code.contains(" a,")
-            }),
-            PatternStep::new(|line, prev| {
-                if line.code == prev[2].code {
-                    return true;
-                }
-                let Some(target) = last_token(&prev[2].code) else {
-                    return false;
-                };
-                strip_trailing_colon(&line.code) == target
-            }),
-        ]),
-        "py_a_and_x_eq_x" => Some(vec![
-            PatternStep::regex(&AND_IMM_RE),
-            PatternStep::new(cond_and_cp_same_operand),
-        ]),
-        "py_a_mask_or" => Some(vec![
-            PatternStep::regex(&AND_IMM_RE),
-            PatternStep::regex(&LD_RH_A_RE),
-            PatternStep::new(|line, prev| {
-                LD_A_RH_RE.is_match(&line.code)
-                    && byte_at(&prev[1].code, 3).is_some_and(|b| byte_at(&line.code, 6) != Some(b))
-            }),
-            PatternStep::regex(&AND_IMM_RE),
-            PatternStep::new(cond_mask_or_step5),
-        ]),
+fn cond_jump_target_prev0(line: &Line, prev: &[Line]) -> bool {
+    cond_jump_target_label(line, prev, 0)
+}
 
-        "py_pair_add_a_or_n" => Some(vec![
-            PatternStep::regex(&ADD_A_LCE_OR_IMM_RE),
-            PatternStep::new(cond_pair_add_step2),
-            PatternStep::new(cond_pair_add_step3),
-            PatternStep::new(cond_pair_add_step4),
-            PatternStep::new(cond_pair_add_step5),
-        ]),
-        "py_pair_add_a_or_n_jump" => Some(vec![
-            PatternStep::regex(&ADD_A_LCE_OR_IMM_RE),
-            PatternStep::new(cond_pair_add_step2),
-            PatternStep::regex(&JUMP_NC_RE),
-            PatternStep::new(cond_pair_add_jump_step4),
-            PatternStep::new(|line, prev| cond_jump_target_label(line, prev, 2)),
-        ]),
-        "py_pair_eq_foo_plus_a" => Some(vec![
-            PatternStep::regex(&LD_PAIR_IMM_RE),
-            PatternStep::new(cond_pair_eq_foo_plus_a_step2),
-            PatternStep::new(cond_pair_eq_foo_plus_a_step3),
-            PatternStep::new(cond_pair_eq_foo_plus_a_step4),
-            PatternStep::new(cond_pair_eq_foo_plus_a_step5),
-            PatternStep::new(cond_pair_eq_foo_plus_a_step6),
-        ]),
-        "py_reg_plus_carry" => Some(vec![
-            PatternStep::regex(&LD_A_BCDEHL_OR_0_RE),
-            PatternStep::regex(&ADC_BCDEHL_OR_0_RE),
-            PatternStep::new(cond_reg_plus_minus_carry_step3),
-        ]),
-        "py_reg_minus_carry" => Some(vec![
-            PatternStep::regex(&LD_A_BCDEHL_OR_0_RE),
-            PatternStep::regex(&SBC_BCDEHL_OR_0_RE),
-            PatternStep::new(cond_reg_plus_minus_carry_step3),
-        ]),
-        "py_pair_eq_a_mul_16" => Some(vec![
-            PatternStep::new(|line, _| {
-                LD_LCE_A_RE.is_match(&line.code) || LD_HBD_0_RE.is_match(&line.code)
-            }),
-            PatternStep::new(cond_pair_eq_a_mul_16_step2),
-            PatternStep::new(cond_pair_eq_a_mul_16_add),
-            PatternStep::new(cond_pair_eq_a_mul_16_add),
-            PatternStep::new(cond_pair_eq_a_mul_16_add),
-            PatternStep::new(cond_pair_eq_a_mul_16_add),
-        ]),
-        "py_pair_eq_a_mul_16_rept" => Some(vec![
-            PatternStep::new(|line, _| {
-                LD_LCE_A_RE.is_match(&line.code) || LD_HBD_0_RE.is_match(&line.code)
-            }),
-            PatternStep::new(cond_pair_eq_a_mul_16_step2),
-            PatternStep::new(|line, _| line.code.eq_ignore_ascii_case("rept 4")),
-            PatternStep::new(cond_pair_eq_a_mul_16_add),
-            PatternStep::new(|line, _| line.code.eq_ignore_ascii_case("endr")),
-        ]),
-        "py_hl_mul_2" => Some(vec![
-            PatternStep::new(|line, _| line.code == "sla l"),
-            PatternStep::new(|line, _| line.code == "rl h"),
-        ]),
-        "py_pair_eq_deref_foo" => Some(vec![
-            PatternStep::regex(&LD_A_MEM_NOT_HBD_RE),
-            PatternStep::regex(&LD_LH_A_RE),
-            PatternStep::new(cond_pair_eq_deref_foo_step3),
-            PatternStep::new(|line, prev| {
-                if !LD_LH_A_RE.is_match(&line.code) {
-                    return false;
-                }
-                let Some(dst1) = byte_at(&prev[1].code, 3) else {
-                    return false;
-                };
-                let Some(dst4) = byte_at(&line.code, 3) else {
-                    return false;
-                };
-                pair_reg(dst1).is_some_and(|p| p == dst4)
-            }),
-        ]),
-        "py_pair_load_pq" => Some(vec![
-            PatternStep::regex(&LD_R_IMM_RE),
-            PatternStep::new(cond_pair_load_pq_step2),
-        ]),
-        "py_deref_hl_eq_n" => Some(vec![
-            PatternStep::regex(&LD_A_IMM_RE),
-            PatternStep::new(|line, _| line.code == "ld [hl], a"),
-        ]),
-        "py_deref_hl_inc_dec" => Some(vec![
-            PatternStep::new(|line, _| line.code == "ld a, [hl]"),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc a" | "dec a")),
-            PatternStep::with_rewind(1, |line, _| line.code == "ld [hl], a"),
-        ]),
-        "py_deref_hl_inc_dec_eq_a" => Some(vec![
-            PatternStep::new(|line, _| line.code == "ld [hl], a"),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc hl" | "dec hl")),
-        ]),
-        "py_deref_hl_inc_dec_eq_n" => Some(vec![
-            PatternStep::regex(&LD_MEMHL_IMM_RE),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc hl" | "dec hl")),
-        ]),
-        "py_a_eq_deref_hl_inc_dec" => Some(vec![
-            PatternStep::new(|line, _| line.code == "ld a, [hl]"),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc hl" | "dec hl")),
-        ]),
-        "py_deref_hl_inc_dec_eq_r" => Some(vec![
-            PatternStep::regex(&LD_MEMHL_R_RE),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc hl" | "dec hl")),
-        ]),
-        "py_r_eq_deref_hl_inc_dec" => Some(vec![
-            PatternStep::regex(&LD_R_MEMHL_RE),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc hl" | "dec hl")),
-        ]),
-        "py_a_eq_0_cmp" => Some(vec![PatternStep::new(cond_a_eq_0_cmp)]),
-        "py_a_eq_1_cmp" => Some(vec![PatternStep::regex(&CP_1_RE)]),
-        "py_ei_ret" => Some(vec![
-            PatternStep::new(|line, _| line.code == "ei"),
-            PatternStep::new(|line, _| line.code == "ret"),
-        ]),
-        "py_tail_call" => Some(vec![
-            PatternStep::new(cond_tail_call),
-            PatternStep::new(|line, _| line.code == "ret"),
-        ]),
-        "py_tail_farcall" => Some(vec![
-            PatternStep::new(cond_tail_farcall),
-            PatternStep::new(|line, _| line.code == "ret"),
-        ]),
-        "py_tail_predef" => Some(vec![
-            PatternStep::new(cond_tail_predef),
-            PatternStep::new(|line, _| line.code == "ret"),
-        ]),
-        "py_fallthrough" => Some(vec![
-            PatternStep::new(cond_tail_call),
-            PatternStep::new(|line, _| line.code == "ret"),
-            PatternStep::new(cond_fallthrough_label),
-        ]),
-        "py_conditional_call" => Some(vec![
-            PatternStep::regex(&JUMP_NZ_OR_ZC_RE),
-            PatternStep::new(cond_tail_call),
-            PatternStep::new(cond_conditional_call_step3),
-        ]),
-        "py_conditional_return" => Some(vec![
-            PatternStep::regex(&JUMP_NZ_OR_ZC_RE),
-            PatternStep::new(|line, _| line.code == "ret"),
-            PatternStep::new(|line, prev| cond_jump_target_label(line, prev, 0)),
-        ]),
-        "py_conditional_fallthrough" => Some(vec![
-            PatternStep::regex(&JUMP_NZ_OR_ZC_RE),
-            PatternStep::new(|line, _| {
-                JR_JP_JMP_ANY_RE.is_match(&line.code)
-                    && !line.code.contains(',')
-                    && line.code != "jp hl"
-            }),
-            PatternStep::new(|line, prev| cond_jump_target_label(line, prev, 0)),
-        ]),
-        "py_call_hl" => Some(vec![
-            PatternStep::new(|line, _| LD_BCDE_IMM_NOT_HBD_RE.is_match(&line.code)),
-            PatternStep::new(cond_call_hl_step2),
-            PatternStep::new(|line, _| line.code == "jp hl"),
-            PatternStep::new(|line, prev| {
-                let Some(target) = split_after_comma(&prev[0].code) else {
-                    return false;
-                };
-                strip_trailing_colon(&line.code) == target
-            }),
-        ]),
-        "py_pointless_hli_hld" => Some(vec![
-            PatternStep::regex(&POINTLESS_HLI_HLD_STEP1_RE),
-            PatternStep::with_rewind(1, cond_pointless_hli_hld_step2),
-            PatternStep::new(|line, _| LD_HL_IMM_OR_POP_HL_RE.is_match(&line.code)),
-        ]),
-        "py_pointless_jumps" => Some(vec![
-            PatternStep::new(|line, _| {
-                POINTLESS_JUMPS_STEP1_RE.is_match(&line.code) && !line.code.contains(',')
-            }),
-            PatternStep::new(cond_pointless_jumps_step2),
-        ]),
-        "py_useless_loads" => Some(vec![
-            PatternStep::new(cond_useless_loads_step1),
-            PatternStep::new(cond_useless_loads_step2),
-        ]),
-        "py_redundant_loads" => Some(vec![
-            PatternStep::new(cond_useless_loads_step1),
-            PatternStep::new(cond_redundant_loads_step2),
-        ]),
-        "py_similar_loads" => Some(vec![
-            PatternStep::new(cond_similar_loads_step1),
-            PatternStep::new(cond_similar_loads_step2),
-        ]),
-        "py_conditionally_load_0" => Some(vec![
-            PatternStep::new(|line, _| {
-                line.code.starts_with("and ") || line.code.starts_with("or ")
-            }),
-            PatternStep::regex(&JR_NZ_RE),
-            PatternStep::regex(&LD_ANY_0_RE),
-        ]),
-        "py_inefficient_prefix_opcodes" => Some(vec![PatternStep::regex(&PREFIX_A_RE)]),
-        "py_redundant_and_or" => Some(vec![
-            PatternStep::regex(&AND_OR_XOR_RE),
-            PatternStep::regex(&AND_OR_A_RE),
-        ]),
-        "py_pointless_and_or_a" => Some(vec![
-            PatternStep::regex(&AND_OR_A_RE),
-            PatternStep::regex(&AFFECTS_ZC_RE),
-        ]),
-        "py_redundant_inc_dec" => Some(vec![
-            PatternStep::new(|line, _| LD_ANY_IMM_NOT_REG_OR_MEM_RE.is_match(&line.code)),
-            PatternStep::new(cond_redundant_inc_dec_step2),
-        ]),
-        "py_pair_eq_n_then_other_then_add" => Some(vec![
-            PatternStep::regex(&LD_PAIR_IMM_RE),
-            PatternStep::new(|line, prev| {
-                LD_PAIR_IMM_RE.is_match(&line.code)
-                    && byte_at(&line.code, 2) != byte_at(&prev[0].code, 3)
-            }),
-            PatternStep::with_rewind(1, cond_pair_three_step3),
-        ]),
-        "py_pair_eq_n_then_inc_dec" => Some(vec![
-            PatternStep::regex(&LD_PAIR_IMM_RE),
-            PatternStep::with_rewind(1, cond_pair_dotdot_step2),
-            PatternStep::with_rewind(1, cond_pair_dotdot_incdec),
-        ]),
-        "py_pair_eq_n_and_other_add" => Some(vec![
-            PatternStep::regex(&LD_PAIR_IMM_RE),
-            PatternStep::with_rewind(1, cond_pair_dotdot_step2),
-            PatternStep::regex(&LD_PAIR_IMM_RE),
-            PatternStep::with_rewind(1, cond_pair_three_step3),
-        ]),
-        "py_dec_a_then_addntimes" => Some(vec![
-            PatternStep::regex(&LD_HL_IMM_RE),
-            PatternStep::new(cond_dec_a_then_addntimes_step2),
-            PatternStep::new(cond_dec_a_then_addntimes_step3),
-            PatternStep::regex(&CALL_RST_ADDNTIMES_RE),
-        ]),
-        "py_redundant_ret" => Some(vec![
-            PatternStep::new(|line, _| line.code == "ret" || line.code.starts_with("ret ")),
-            PatternStep::new(cond_redundant_ret_step2),
-        ]),
-        "py_stub_function" => Some(vec![
-            PatternStep::new(|line, _| is_label_definition_line(line)),
-            PatternStep::new(|line, _| line.code == "ret"),
-        ]),
-        "py_stub_jump" => Some(vec![
-            PatternStep::new(|line, _| is_label_definition_line(line)),
-            PatternStep::new(|line, _| line.code.starts_with("jr ") && !line.code.contains(',')),
-        ]),
-        "py_wram_inc_dec" => Some(vec![
-            PatternStep::regex(&LD_WRAM_LOAD_RE),
-            PatternStep::new(|line, _| matches!(line.code.as_str(), "inc a" | "dec a")),
-            PatternStep::new(cond_wram_inc_dec_step3),
-        ]),
-        "py_trailing_string_space" => Some(vec![
-            PatternStep::regex(&TEXT_TRAILING_SPACE_RE),
-            PatternStep::new(|line, _| !TEXT_COMMAND_FOLLOWS_RE.is_match(&line.code)),
-        ]),
+fn cond_jump_target_prev1(line: &Line, prev: &[Line]) -> bool {
+    cond_jump_target_label(line, prev, 1)
+}
 
-        _ => None,
+fn cond_jump_target_prev2(line: &Line, prev: &[Line]) -> bool {
+    cond_jump_target_label(line, prev, 2)
+}
+
+fn cond_unconditional_jump_no_comma(line: &Line, _prev: &[Line]) -> bool {
+    JR_JP_JMP_ANY_RE.is_match(&line.code) && !line.code.contains(',') && line.code != "jp hl"
+}
+
+fn cond_reg_conditional_ternary_step5(line: &Line, prev: &[Line]) -> bool {
+    if LDH_R_RE.is_match(&line.code) {
+        return true;
     }
+    (line.code == "xor a" || line.code == "xor a, a")
+        && prev.get(1).is_some_and(|p1| {
+            p1.code.starts_with("ld") && LDH_R_RE.is_match(&p1.code) && p1.code.contains(" a,")
+        })
+}
+
+fn cond_reg_conditional_ternary_step6(line: &Line, prev: &[Line]) -> bool {
+    if line.code == prev[2].code {
+        return true;
+    }
+    let Some(target) = last_token(&prev[2].code) else {
+        return false;
+    };
+    strip_trailing_colon(&line.code) == target
+}
+
+fn cond_a_mask_or_step3(line: &Line, prev: &[Line]) -> bool {
+    LD_A_RH_RE.is_match(&line.code)
+        && byte_at(&prev[1].code, 3).is_some_and(|b| byte_at(&line.code, 6) != Some(b))
+}
+
+fn cond_pair_eq_a_mul_16_step1(line: &Line, _prev: &[Line]) -> bool {
+    LD_LCE_A_RE.is_match(&line.code) || LD_HBD_0_RE.is_match(&line.code)
+}
+
+fn cond_pair_eq_deref_foo_step4(line: &Line, prev: &[Line]) -> bool {
+    if !LD_LH_A_RE.is_match(&line.code) {
+        return false;
+    }
+    let Some(dst1) = byte_at(&prev[1].code, 3) else {
+        return false;
+    };
+    let Some(dst4) = byte_at(&line.code, 3) else {
+        return false;
+    };
+    pair_reg(dst1).is_some_and(|p| p == dst4)
+}
+
+fn cond_pair_eq_n_then_other_then_add_step2(line: &Line, prev: &[Line]) -> bool {
+    LD_PAIR_IMM_RE.is_match(&line.code) && byte_at(&line.code, 2) != byte_at(&prev[0].code, 3)
+}
+
+fn cond_call_hl_step4(line: &Line, prev: &[Line]) -> bool {
+    let Some(target) = split_after_comma(&prev[0].code) else {
+        return false;
+    };
+    strip_trailing_colon(&line.code) == target
+}
+
+fn cond_pointless_jumps_step1(line: &Line, _prev: &[Line]) -> bool {
+    POINTLESS_JUMPS_STEP1_RE.is_match(&line.code) && !line.code.contains(',')
+}
+
+fn cond_conditionally_load_zero_step1(line: &Line, _prev: &[Line]) -> bool {
+    line.code.starts_with("and ") || line.code.starts_with("or ")
+}
+
+fn cond_label_definition(line: &Line, _prev: &[Line]) -> bool {
+    is_label_definition_line(line)
+}
+
+fn cond_trailing_string_space_step2(line: &Line, _prev: &[Line]) -> bool {
+    !TEXT_COMMAND_FOLLOWS_RE.is_match(&line.code)
+}
+
+fn cond_no_op_ld_rust(line: &Line, _prev: &[Line]) -> bool {
+    let Some(ins) = parse_instruction(&line.code) else {
+        return false;
+    };
+    if ins.mnemonic != "ld" || ins.operands.len() != 2 {
+        return false;
+    }
+    let left = ins.operands[0].to_ascii_lowercase();
+    let right = ins.operands[1].to_ascii_lowercase();
+    matches!(left.as_str(), "a" | "b" | "c" | "d" | "e" | "h" | "l") && left == right
+}
+
+fn cond_no_op_add_sub_rust(line: &Line, _prev: &[Line]) -> bool {
+    let Some(ins) = parse_instruction(&line.code) else {
+        return false;
+    };
+    if ins.mnemonic != "add" && ins.mnemonic != "sub" {
+        return false;
+    }
+
+    let imm = match ins.operands.as_slice() {
+        [op] => op,
+        [first, second] if first.eq_ignore_ascii_case("a") => second,
+        _ => return false,
+    };
+
+    let imm = imm.trim();
+    is_rgbds_zero_literal(imm)
+}
+
+fn cond_ld_a_from_hli(line: &Line, _prev: &[Line]) -> bool {
+    let Some(ins) = parse_instruction(&line.code) else {
+        return false;
+    };
+    if ins.mnemonic != "ld" || ins.operands.len() != 2 {
+        return false;
+    }
+    let dst = ins.operands[0].to_ascii_lowercase();
+    let src = canonicalize_rgbds_operand(&ins.operands[1]);
+    dst == "a" && src == "[hli]"
+}
+
+fn arc_fn(f: fn(&Line, &[Line]) -> bool) -> ConditionFn {
+    Arc::new(f)
+}
+
+pub fn condition_registry() -> &'static HashMap<&'static str, ConditionFn> {
+    static REGISTRY: LazyLock<HashMap<&'static str, ConditionFn>> = LazyLock::new(|| {
+        let mut map: HashMap<&'static str, ConditionFn> = HashMap::new();
+
+        map.insert("cond_no_op_ld_python", arc_fn(cond_no_op_ld_python));
+        map.insert(
+            "cond_inefficient_hram_load",
+            arc_fn(cond_inefficient_hram_load),
+        );
+        map.insert(
+            "cond_inefficient_hram_store",
+            arc_fn(cond_inefficient_hram_store),
+        );
+        map.insert(
+            "cond_a_eq_n_minus_a_step3",
+            arc_fn(cond_a_eq_n_minus_a_step3),
+        );
+        map.insert("cond_a_carry_pq_step3", arc_fn(cond_a_carry_pq_step3));
+        map.insert("jump_target_prev0", arc_fn(cond_jump_target_prev0));
+        map.insert("jump_target_prev1", arc_fn(cond_jump_target_prev1));
+        map.insert("jump_target_prev2", arc_fn(cond_jump_target_prev2));
+        map.insert(
+            "cond_a_eq_x_plusminus_carry_step2",
+            arc_fn(cond_a_eq_x_plusminus_carry_step2),
+        );
+        map.insert(
+            "cond_a_eq_carry_plusminus_x_step3",
+            arc_fn(cond_a_eq_carry_plusminus_x_step3),
+        );
+        map.insert("cond_and_cp_same_operand", arc_fn(cond_and_cp_same_operand));
+        map.insert("cond_mask_or_step5", arc_fn(cond_mask_or_step5));
+        map.insert("cond_pair_add_step2", arc_fn(cond_pair_add_step2));
+        map.insert("cond_pair_add_step3", arc_fn(cond_pair_add_step3));
+        map.insert("cond_pair_add_step4", arc_fn(cond_pair_add_step4));
+        map.insert("cond_pair_add_step5", arc_fn(cond_pair_add_step5));
+        map.insert("cond_pair_add_jump_step4", arc_fn(cond_pair_add_jump_step4));
+        map.insert(
+            "cond_pair_eq_foo_plus_a_step2",
+            arc_fn(cond_pair_eq_foo_plus_a_step2),
+        );
+        map.insert(
+            "cond_pair_eq_foo_plus_a_step3",
+            arc_fn(cond_pair_eq_foo_plus_a_step3),
+        );
+        map.insert(
+            "cond_pair_eq_foo_plus_a_step4",
+            arc_fn(cond_pair_eq_foo_plus_a_step4),
+        );
+        map.insert(
+            "cond_pair_eq_foo_plus_a_step5",
+            arc_fn(cond_pair_eq_foo_plus_a_step5),
+        );
+        map.insert(
+            "cond_pair_eq_foo_plus_a_step6",
+            arc_fn(cond_pair_eq_foo_plus_a_step6),
+        );
+        map.insert(
+            "cond_reg_plus_minus_carry_step3",
+            arc_fn(cond_reg_plus_minus_carry_step3),
+        );
+        map.insert(
+            "cond_pair_eq_a_mul_16_step1",
+            arc_fn(cond_pair_eq_a_mul_16_step1),
+        );
+        map.insert(
+            "cond_pair_eq_a_mul_16_step2",
+            arc_fn(cond_pair_eq_a_mul_16_step2),
+        );
+        map.insert(
+            "cond_pair_eq_a_mul_16_add",
+            arc_fn(cond_pair_eq_a_mul_16_add),
+        );
+        map.insert(
+            "cond_pair_eq_deref_foo_step3",
+            arc_fn(cond_pair_eq_deref_foo_step3),
+        );
+        map.insert(
+            "cond_pair_eq_deref_foo_step4",
+            arc_fn(cond_pair_eq_deref_foo_step4),
+        );
+        map.insert("cond_pair_load_pq_step2", arc_fn(cond_pair_load_pq_step2));
+        map.insert("cond_a_eq_0_cmp", arc_fn(cond_a_eq_0_cmp));
+        map.insert("cond_tail_call", arc_fn(cond_tail_call));
+        map.insert("cond_tail_farcall", arc_fn(cond_tail_farcall));
+        map.insert("cond_tail_predef", arc_fn(cond_tail_predef));
+        map.insert("cond_fallthrough_label", arc_fn(cond_fallthrough_label));
+        map.insert(
+            "cond_conditional_call_step3",
+            arc_fn(cond_conditional_call_step3),
+        );
+        map.insert("cond_call_hl_step2", arc_fn(cond_call_hl_step2));
+        map.insert("cond_call_hl_step4", arc_fn(cond_call_hl_step4));
+        map.insert(
+            "cond_pointless_hli_hld_step2",
+            arc_fn(cond_pointless_hli_hld_step2),
+        );
+        map.insert(
+            "cond_pointless_jumps_step1",
+            arc_fn(cond_pointless_jumps_step1),
+        );
+        map.insert(
+            "cond_pointless_jumps_step2",
+            arc_fn(cond_pointless_jumps_step2),
+        );
+        map.insert("cond_useless_loads_step1", arc_fn(cond_useless_loads_step1));
+        map.insert("cond_useless_loads_step2", arc_fn(cond_useless_loads_step2));
+        map.insert(
+            "cond_redundant_loads_step2",
+            arc_fn(cond_redundant_loads_step2),
+        );
+        map.insert("cond_similar_loads_step1", arc_fn(cond_similar_loads_step1));
+        map.insert("cond_similar_loads_step2", arc_fn(cond_similar_loads_step2));
+        map.insert(
+            "cond_redundant_inc_dec_step2",
+            arc_fn(cond_redundant_inc_dec_step2),
+        );
+        map.insert("cond_pair_three_step3", arc_fn(cond_pair_three_step3));
+        map.insert("cond_pair_dotdot_step2", arc_fn(cond_pair_dotdot_step2));
+        map.insert("cond_pair_dotdot_incdec", arc_fn(cond_pair_dotdot_incdec));
+        map.insert(
+            "cond_dec_a_then_addntimes_step2",
+            arc_fn(cond_dec_a_then_addntimes_step2),
+        );
+        map.insert(
+            "cond_dec_a_then_addntimes_step3",
+            arc_fn(cond_dec_a_then_addntimes_step3),
+        );
+        map.insert("cond_redundant_ret_step2", arc_fn(cond_redundant_ret_step2));
+        map.insert("cond_wram_inc_dec_step3", arc_fn(cond_wram_inc_dec_step3));
+        map.insert(
+            "cond_unconditional_jump_no_comma",
+            arc_fn(cond_unconditional_jump_no_comma),
+        );
+        map.insert(
+            "cond_reg_conditional_ternary_step5",
+            arc_fn(cond_reg_conditional_ternary_step5),
+        );
+        map.insert(
+            "cond_reg_conditional_ternary_step6",
+            arc_fn(cond_reg_conditional_ternary_step6),
+        );
+        map.insert("cond_a_mask_or_step3", arc_fn(cond_a_mask_or_step3));
+        map.insert(
+            "cond_pair_eq_n_then_other_then_add_step2",
+            arc_fn(cond_pair_eq_n_then_other_then_add_step2),
+        );
+        map.insert(
+            "cond_conditionally_load_zero_step1",
+            arc_fn(cond_conditionally_load_zero_step1),
+        );
+        map.insert("cond_label_definition", arc_fn(cond_label_definition));
+        map.insert(
+            "cond_trailing_string_space_step2",
+            arc_fn(cond_trailing_string_space_step2),
+        );
+        map.insert("cond_no_op_ld_rust", arc_fn(cond_no_op_ld_rust));
+        map.insert("cond_no_op_add_sub_rust", arc_fn(cond_no_op_add_sub_rust));
+        map.insert("cond_ld_a_from_hli", arc_fn(cond_ld_a_from_hli));
+
+        map
+    });
+    &REGISTRY
 }

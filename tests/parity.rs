@@ -111,7 +111,7 @@ fn python_and_rust_outputs_match_on_fixtures() {
         let mut cmd = Command::new(optimize_bin);
         cmd.current_dir(&repo_root)
             .arg("--pack")
-            .arg("configs/pret.toml")
+            .arg("configs/pret.yaml")
             .args(&rel_files);
         run_checked(cmd)
     };
