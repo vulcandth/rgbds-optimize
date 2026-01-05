@@ -133,9 +133,9 @@ builtins:
     steps:
       - function: cond_pair_eq_a_mul_16_step1
       - function: cond_pair_eq_a_mul_16_step2
-      - regex: '(?i)^rept 4$'
+      - regex: '^rept 4$'
       - function: cond_pair_eq_a_mul_16_add
-      - regex: '(?i)^endr$'
+      - regex: '^endr$'
   py_hl_mul_2:
     steps:
       - equals: 'sla l'

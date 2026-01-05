@@ -220,6 +220,7 @@ fn to_pattern_step(
         };
         crate::StepCondition::Regex(compiled)
     } else if let Some(eq) = step.equals {
+        // Capture the owned string once per step; pattern packs are loaded once per run.
         crate::StepCondition::Fn(Arc::new(move |line, _| line.code == eq))
     } else if let Some(func_name) = step.function {
         let func = function_registry
