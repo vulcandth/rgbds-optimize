@@ -1,3 +1,5 @@
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/vulcandth/rgbds-optimize/ci.yml)
+![GitHub License](https://img.shields.io/github/license/vulcandth/rgbds-optimize)
 ![Codecov](https://img.shields.io/codecov/c/github/vulcandth/rgbds-optimize)
 
 ## Overview
