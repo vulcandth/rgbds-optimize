@@ -16,7 +16,13 @@ impl FancyRegex {
     }
 
     pub fn is_match(&self, text: &str) -> bool {
-        self.0.is_match(text).unwrap_or(false)
+        match self.0.is_match(text) {
+            Ok(matched) => matched,
+            Err(err) => {
+                eprintln!("fancy-regex error while matching '{text}': {err}");
+                false
+            }
+        }
     }
 }
 
