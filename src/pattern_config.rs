@@ -229,7 +229,9 @@ fn to_pattern_step(
             .clone();
         crate::StepCondition::Fn(func)
     } else {
-        unreachable!()
+        return Err(ConfigError::MissingCondition {
+            pattern: pattern_name.to_string(),
+        });
     };
 
     Ok(PatternStep {
