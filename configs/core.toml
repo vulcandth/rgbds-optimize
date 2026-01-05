@@ -1,7 +1,7 @@
 pack = "core"
 
 # This pack is intended to be gbdev-generic.
-# The `builtin` values map to built-in predicates/steps in rgbds-optimize-core.
+# The `builtin` values map to built-in predicates/steps in rgbds-optimize.
 
 [[pattern]]
 name = "No-op ld"

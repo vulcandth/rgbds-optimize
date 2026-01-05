@@ -478,15 +478,8 @@ dependencies = [
 name = "rgbds-optimize"
 version = "0.1.0"
 dependencies = [
- "pprof",
- "rgbds-optimize-core",
-]
-
-[[package]]
-name = "rgbds-optimize-core"
-version = "0.1.0"
-dependencies = [
  "fancy-regex",
+ "pprof",
  "serde",
  "toml",
 ]

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 #[cfg(all(feature = "pprof", unix))]
 use std::fs::File;
 
+use rgbds_optimize as optimize_core;
+
 #[derive(Debug)]
 struct Args {
     pack_path: PathBuf,
@@ -50,7 +52,7 @@ fn main() {
     #[cfg(not(all(feature = "pprof", unix)))]
     if args.pprof_out.is_some() {
         eprintln!(
-            "--pprof is not available in this build. Rebuild with: cargo run -p rgbds-optimize --features pprof -- <args>"
+            "--pprof is not available in this build. Rebuild with: cargo run --features pprof -- <args>"
         );
         std::process::exit(2);
     }

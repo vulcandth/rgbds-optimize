@@ -1,11 +1,5 @@
-[workspace]
-resolver = "2"
-members = [
-  "crates/rgbds-optimize",
-  "crates/rgbds-optimize-core",
-]
-
-[workspace.package]
+[package]
+name = "rgbds-optimize"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -16,3 +10,19 @@ authors = [
 repository = "https://github.com/vulcandth/rgbds-optimize"
 homepage = "https://github.com/vulcandth/rgbds-optimize"
 description = "RGBDS optimize.py port: scan Game Boy RGBDS assembly for suboptimal instruction patterns."
+readme = "README.md"
+
+[[bin]]
+name = "optimize"
+path = "src/main.rs"
+
+[dependencies]
+fancy-regex = "0.17"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[target.'cfg(unix)'.dependencies]
+pprof = { version = "0.13", optional = true, features = ["flamegraph"] }
+
+[features]
+pprof = ["dep:pprof"]

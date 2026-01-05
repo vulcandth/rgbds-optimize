@@ -175,15 +175,7 @@ def main(argv: Sequence[str]) -> int:
 
         py_cmd = [args.python, "optimize.py", "--file-list", str(list_path)]
 
-        cargo_args = [
-            "cargo",
-            "run",
-            "--quiet",
-            "-p",
-            "rgbds-optimize",
-            "--bin",
-            "optimize",
-        ]
+        cargo_args = ["cargo", "run", "--quiet", "--bin", "optimize"]
         if args.cargo_profile == "release":
             cargo_args.append("--release")
 
@@ -197,7 +189,7 @@ def main(argv: Sequence[str]) -> int:
         ]
 
         if not args.no_build:
-            build = ["cargo", "build", "-p", "rgbds-optimize", "--bin", "optimize"]
+            build = ["cargo", "build", "--bin", "optimize"]
             if args.cargo_profile == "release":
                 build.append("--release")
             print("Building Rust binary...", file=sys.stderr)
