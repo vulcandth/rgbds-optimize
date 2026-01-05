@@ -106,12 +106,13 @@ The Python tool is a small state machine per pattern, with optional rewind.
 
 ## 5. Regex vs Structured Parsing (Rust Compatibility Constraints)
 
-Rust’s popular `regex` crate does not support backreferences; `optimize.py` uses them in places (example: `ld ([abcdehl]), \1`).
+Rust’s standard `regex` crate does not support backreferences or look-arounds; we use `fancy-regex`
+to enable those when needed (example: `ld ([abcdehl]), \1`).
 
 - [x] Inventory which patterns depend on backreferences or capture equality.
 - [x] Choose an approach that keeps performance strong:
   - Preferred: parse instructions into `(mnemonic, operands[])` tokens and express patterns structurally.
-  - Acceptable: keep regex for simple patterns, and implement the “backref” patterns with custom predicate functions.
+  - Acceptable: keep regex for simple patterns, and use `fancy-regex` only where advanced features are required.
   - Avoid making everything a backtracking regex (accuracy is critical, but speed is a strong second).
 - [x] Ensure case-insensitivity where RGBDS accepts it (at minimum: match current behavior, which is mostly case-sensitive string comparisons plus some `.lower()` uses).
 

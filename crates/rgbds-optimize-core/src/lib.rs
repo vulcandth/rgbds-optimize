@@ -5,6 +5,34 @@ mod patterns;
 
 pub use pattern_config::run_pack_on_lines;
 pub use pattern_config::{load_pattern_pack_toml, PatternPack};
+use std::ops::Deref;
+
+#[derive(Debug)]
+pub struct FancyRegex(fancy_regex::Regex);
+
+impl FancyRegex {
+    pub fn new(re: &str) -> Result<Self, fancy_regex::Error> {
+        fancy_regex::Regex::new(re).map(Self)
+    }
+
+    pub fn is_match(&self, text: &str) -> bool {
+        match self.0.is_match(text) {
+            Ok(matched) => matched,
+            Err(err) => {
+                eprintln!("Pattern matching error for text '{text}': {err}");
+                false
+            }
+        }
+    }
+}
+
+impl Deref for FancyRegex {
+    type Target = fancy_regex::Regex;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Line {
@@ -154,7 +182,7 @@ pub type ConditionFn = fn(&Line, &[Line]) -> bool;
 #[derive(Copy, Clone, Debug)]
 pub enum StepCondition {
     Fn(ConditionFn),
-    Regex(&'static std::sync::LazyLock<regex::Regex>),
+    Regex(&'static std::sync::LazyLock<FancyRegex>),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -171,7 +199,7 @@ impl PatternStep {
         }
     }
 
-    pub fn regex(re: &'static std::sync::LazyLock<regex::Regex>) -> Self {
+    pub fn regex(re: &'static std::sync::LazyLock<FancyRegex>) -> Self {
         Self {
             rewind: None,
             condition: StepCondition::Regex(re),
@@ -185,10 +213,7 @@ impl PatternStep {
         }
     }
 
-    pub fn with_rewind_regex(
-        rewind: usize,
-        re: &'static std::sync::LazyLock<regex::Regex>,
-    ) -> Self {
+    pub fn with_rewind_regex(rewind: usize, re: &'static std::sync::LazyLock<FancyRegex>) -> Self {
         Self {
             rewind: Some(rewind),
             condition: StepCondition::Regex(re),
@@ -389,6 +414,7 @@ fn normalize_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
 
     #[test]
     fn preprocess_skips_blank_code_lines() {
@@ -542,5 +568,13 @@ mod tests {
         assert!(is_rgbds_zero_literal("&0"));
         assert!(is_rgbds_zero_literal("false"));
         assert!(!is_rgbds_zero_literal("1"));
+    }
+
+    #[test]
+    fn fancy_regex_supports_lookahead_patterns() {
+        static LOOKAHEAD_RE: LazyLock<FancyRegex> =
+            LazyLock::new(|| FancyRegex::new(r"foo(?=bar)").unwrap());
+        assert!(LOOKAHEAD_RE.is_match("foobar"));
+        assert!(!LOOKAHEAD_RE.is_match("foobaz"));
     }
 }
