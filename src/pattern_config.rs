@@ -33,6 +33,12 @@ pub enum ConfigError {
     MissingSteps {
         pattern: String,
     },
+    MissingCondition {
+        pattern: String,
+    },
+    InvalidStepCondition {
+        pattern: String,
+    },
     Regex {
         pattern: String,
         error: fancy_regex::Error,
@@ -55,6 +61,13 @@ impl std::fmt::Display for ConfigError {
             ConfigError::MissingSteps { pattern } => {
                 write!(f, "pattern '{pattern}' is missing steps")
             }
+            ConfigError::MissingCondition { pattern } => {
+                write!(f, "pattern '{pattern}' step is missing a condition")
+            }
+            ConfigError::InvalidStepCondition { pattern } => write!(
+                f,
+                "pattern '{pattern}' step must set exactly one of regex, equals, or function"
+            ),
             ConfigError::Regex { pattern, error } => {
                 write!(f, "invalid regex '{pattern}': {error}")
             }
@@ -182,8 +195,13 @@ fn to_pattern_step(
     if step.function.is_some() {
         chosen += 1;
     }
-    if chosen != 1 {
-        return Err(ConfigError::MissingSteps {
+    if chosen == 0 {
+        return Err(ConfigError::MissingCondition {
+            pattern: pattern_name.to_string(),
+        });
+    }
+    if chosen > 1 {
+        return Err(ConfigError::InvalidStepCondition {
             pattern: pattern_name.to_string(),
         });
     }
@@ -200,36 +218,23 @@ fn to_pattern_step(
             regex_cache.insert(regex.clone(), arc.clone());
             arc
         };
-        PatternStep::regex(compiled)
+        crate::StepCondition::Regex(compiled)
     } else if let Some(eq) = step.equals {
         let eq = Arc::new(eq);
-        PatternStep::new(move |line, _| line.code == *eq)
+        crate::StepCondition::Fn(Arc::new(move |line, _| line.code == *eq))
     } else if let Some(func_name) = step.function {
         let func = function_registry
             .get(func_name.as_str())
             .ok_or_else(|| ConfigError::UnknownFunction(func_name.clone()))?
             .clone();
-        PatternStep {
-            rewind: step.rewind,
-            condition: crate::StepCondition::Fn(func),
-        }
+        crate::StepCondition::Fn(func)
     } else {
         unreachable!()
     };
 
-    if step.rewind.is_some() && matches!(condition.condition, crate::StepCondition::Regex(_)) {
-        // Attach rewind if caller requested it.
-        if let crate::StepCondition::Regex(re) = condition.condition.clone() {
-            return Ok(PatternStep {
-                rewind: step.rewind,
-                condition: crate::StepCondition::Regex(re),
-            });
-        }
-    }
-
     Ok(PatternStep {
         rewind: step.rewind,
-        condition: condition.condition,
+        condition,
     })
 }
 
