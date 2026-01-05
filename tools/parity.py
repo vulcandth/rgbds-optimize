@@ -118,15 +118,7 @@ def main(argv: Sequence[str]) -> int:
 
         py_cmd = [args.python, "optimize.py", "--file-list", str(list_path)]
 
-        cargo_args = [
-            "cargo",
-            "run",
-            "--quiet",
-            "-p",
-            "rgbds-optimize",
-            "--bin",
-            "optimize",
-        ]
+        cargo_args = ["cargo", "run", "--quiet", "--bin", "optimize"]
         if args.cargo_profile == "release":
             cargo_args.append("--release")
 

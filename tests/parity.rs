@@ -24,7 +24,7 @@ fn normalize_newlines(bytes: &[u8]) -> Vec<u8> {
 }
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 fn parity_fixture_dir(repo_root: &Path) -> PathBuf {
