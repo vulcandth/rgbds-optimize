@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    canonicalize_rgbds_operand, find_pattern_instances, is_rgbds_zero_literal, parse_instruction,
-    Line, MatchInstance, PatternStep,
+    Line, MatchInstance, PatternStep, canonicalize_rgbds_operand, find_pattern_instances,
+    is_rgbds_zero_literal, parse_instruction,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -135,10 +135,10 @@ fn builtin_pattern_steps(builtin: &str) -> Option<&'static [PatternStep]> {
     static CACHE: LazyLock<Mutex<HashMap<String, &'static [PatternStep]>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    if let Ok(cache) = CACHE.lock() {
-        if let Some(hit) = cache.get(builtin).copied() {
-            return Some(hit);
-        }
+    if let Ok(cache) = CACHE.lock()
+        && let Some(hit) = cache.get(builtin).copied()
+    {
+        return Some(hit);
     }
 
     let steps: Vec<PatternStep> = match builtin {

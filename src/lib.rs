@@ -4,7 +4,7 @@ mod pattern_config;
 mod patterns;
 
 pub use pattern_config::run_pack_on_lines;
-pub use pattern_config::{load_pattern_pack_toml, PatternPack};
+pub use pattern_config::{PatternPack, load_pattern_pack_toml};
 use std::ops::Deref;
 
 #[derive(Debug)]

@@ -8,12 +8,12 @@ fn normalize_newlines(bytes: &[u8]) -> Vec<u8> {
     let mut i = 0;
 
     while i < bytes.len() {
-        if bytes[i] == b'\r' {
-            if let Some(b'\n') = bytes.get(i + 1) {
-                out.push(b'\n');
-                i += 2;
-                continue;
-            }
+        if bytes[i] == b'\r'
+            && let Some(b'\n') = bytes.get(i + 1)
+        {
+            out.push(b'\n');
+            i += 2;
+            continue;
         }
 
         out.push(bytes[i]);
