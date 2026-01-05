@@ -13,6 +13,6 @@ readme = "../../README.md"
 path = "src/lib.rs"
 
 [dependencies]
-regex = "1"
+fancy-regex = "0.17"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

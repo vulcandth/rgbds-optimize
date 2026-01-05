@@ -1,5 +1,4 @@
-use crate::{Line, PatternStep};
-use regex::Regex;
+use crate::{FancyRegex as Regex, Line, PatternStep};
 use std::sync::LazyLock;
 
 fn is_volatile(code: &str) -> bool {
@@ -672,8 +671,8 @@ fn cond_redundant_inc_dec_step2(line: &Line, prev: &[Line]) -> bool {
 }
 
 fn cond_pair_three_step3(line: &Line, prev: &[Line]) -> bool {
-    // optimize.py uses a negative lookahead which Rust's regex crate doesn't support.
-    // Equivalent check: lowercase "add ", lhs in {hl,bc,de}, and rhs does NOT start with any of those.
+    // optimize.py uses a negative lookahead. We keep a manual check to avoid backtracking overhead
+    // in this hot path even though the regex engine now supports it.
     let Some(rest) = line.code.strip_prefix("add ") else {
         return false;
     };
