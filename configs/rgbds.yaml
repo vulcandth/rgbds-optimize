@@ -10,10 +10,10 @@ builtins:
       - equals: 'nop'
   py_no_op_ld:
     steps:
-      - function: cond_no_op_ld_python
+      - regex: '^ld ([abcdehl]), \1$'
   no_op_add_sub:
     steps:
-      - function: cond_no_op_add_sub_rust
+      - regex: '^(?:add|sub) (?:a, )?(?:[%\$&]?0+|FALSE)$'
   py_a_eq_0:
     steps:
       - regex: '^ld a, (?:[%\$&]?0+|FALSE)$'
@@ -28,7 +28,7 @@ builtins:
       - regex: '^xor (?:255|-[$%&]?0*1|\$[Ff][Ff]|%11111111|&377)$'
   ld_a_from_hli:
     steps:
-      - function: cond_ld_a_from_hli
+      - regex: '^ld a, \[hl[+i]\]'
 
 patterns:
   - name: "Redundant arguments"

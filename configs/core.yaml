@@ -3,13 +3,13 @@ pack: core
 builtins:
   no_op_ld:
     steps:
-      - function: cond_no_op_ld_rust
+      - regex: '^ld ([abcdehl]), \1$'
   no_op_add_sub:
     steps:
-      - function: cond_no_op_add_sub_rust
+      - regex: '^(?:add|sub) (?:a, )?(?:[%\$&]?0+|FALSE)$'
   ld_a_from_hli:
     steps:
-      - function: cond_ld_a_from_hli
+      - regex: '^ld a, \[hl[+i]\]'
 
 patterns:
   - name: "No-op ld"

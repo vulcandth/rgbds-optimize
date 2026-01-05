@@ -10,7 +10,7 @@ builtins:
       - equals: 'nop'
   py_no_op_ld:
     steps:
-      - function: cond_no_op_ld_python
+      - regex: '^ld ([abcdehl]), \1$'
   py_no_op_add_sub:
     steps:
       - regex: '^(?:add|sub) (?:a, )?(?:[%\$&]?0+|FALSE)$'
