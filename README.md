@@ -1,21 +1,4 @@
----
-post_title: "rgbds-optimize-rs"
-author1: "vulcandth"
-post_slug: "rgbds-optimize-rs"
-microsoft_alias: ""
-featured_image: ""
-categories:
-  - "Other"
-tags:
-  - "rgbds"
-  - "game-boy"
-  - "assembler"
-  - "rust"
-  - "static-analysis"
-ai_note: "AI-assisted draft created in VS Code."
-summary: "Rust port of optimize.py for finding suboptimal RGBDS assembly patterns, with config-driven pattern packs and Python-compatible output."
-post_date: "2026-01-04"
----
+![Codecov](https://img.shields.io/codecov/c/github/vulcandth/rgbds-optimize)
 
 ## Overview
 
