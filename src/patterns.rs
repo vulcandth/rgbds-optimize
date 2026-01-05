@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Regex constants are retained for reference even when YAML drives step selection.
+#![allow(dead_code)] // Regex helpers remain for parity notes and future YAML packs; unused ones are benign.
 
 use crate::{
     canonicalize_rgbds_operand, is_rgbds_zero_literal, parse_instruction, ConditionFn,

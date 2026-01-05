@@ -220,8 +220,7 @@ fn to_pattern_step(
         };
         crate::StepCondition::Regex(compiled)
     } else if let Some(eq) = step.equals {
-        let eq = Arc::new(eq);
-        crate::StepCondition::Fn(Arc::new(move |line, _| line.code == *eq))
+        crate::StepCondition::Fn(Arc::new(move |line, _| line.code == eq))
     } else if let Some(func_name) = step.function {
         let func = function_registry
             .get(func_name.as_str())
