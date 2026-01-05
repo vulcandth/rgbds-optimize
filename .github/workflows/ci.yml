@@ -30,20 +30,44 @@ jobs:
       - name: Cargo test
         run: cargo test
 
-      - name: Install cargo-tarpaulin
+      - name: Cache cargo-tarpaulin
         if: matrix.os == 'ubuntu-latest'
+        id: tarpaulin-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tarpaulin
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: ${{ runner.os }}-tarpaulin-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-tarpaulin
+        if: matrix.os == 'ubuntu-latest' && steps.tarpaulin-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-tarpaulin --locked
 
       - name: Coverage (tarpaulin)
         if: matrix.os == 'ubuntu-latest'
-        run: cargo tarpaulin --out Xml
+        run: |
+          mkdir -p target/tarpaulin
+          rm -f target/tarpaulin/*.xml
+          cargo tarpaulin --all-features --out Xml --output-dir target/tarpaulin
+
+      - name: Prepare coverage report
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          report=$(find target/tarpaulin -maxdepth 1 -name '*.xml' -print -quit)
+          if [ -z "$report" ]; then
+            echo "No coverage XML report found"
+            exit 1
+          fi
+          cp "$report" cobertura.xml
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           files: cobertura.xml
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
   policy:
