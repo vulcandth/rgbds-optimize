@@ -19,7 +19,7 @@ impl FancyRegex {
         match self.0.is_match(text) {
             Ok(matched) => matched,
             Err(err) => {
-                eprintln!("fancy-regex error while matching '{text}': {err}");
+                eprintln!("Pattern matching error for text '{text}': {err}");
                 false
             }
         }
