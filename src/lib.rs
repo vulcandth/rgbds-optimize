@@ -689,6 +689,17 @@ fn normalize_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
 
+    fn make_line(code: &str) -> Line {
+        Line {
+            num: 1,
+            code: code.to_string(),
+            comment: String::new(),
+            comment_lower: String::new(),
+            text: code.to_string(),
+            context: String::new(),
+        }
+    }
+
     #[test]
     fn preprocess_skips_blank_code_lines() {
         let got = preprocess_properties("\n  ; comment-only\n\t\n");
@@ -843,5 +854,109 @@ mod tests {
         let re = Arc::new(FancyRegex::new(r"foo(?=bar)").unwrap());
         assert!(re.is_match("foobar"));
         assert!(!re.is_match("foobaz"));
+    }
+
+    #[test]
+    fn step_condition_covers_code_predicates_and_combinators() {
+        let line = make_line("ld a, [hl+]");
+        assert!(StepCondition::CodeStartsWith("ld".into()).matches(&line, &[]));
+        assert!(StepCondition::CodeEndsWith("+]".into()).matches(&line, &[]));
+        assert!(StepCondition::CodeContains("a".into()).matches(&line, &[]));
+        assert!(StepCondition::CodeNe("nop".into()).matches(&line, &[]));
+
+        let any = StepCondition::Any(vec![
+            StepCondition::CodeEq("nop".into()),
+            StepCondition::CodeStartsWith("ld".into()),
+        ]);
+        assert!(any.matches(&line, &[]));
+
+        let all = StepCondition::All(vec![
+            StepCondition::CodeStartsWith("ld".into()),
+            StepCondition::Not(Box::new(StepCondition::CodeEq("nop".into()))),
+        ]);
+        assert!(all.matches(&line, &[]));
+    }
+
+    #[test]
+    fn instruction_condition_checks_mnemonic_and_operands() {
+        let canonical = StepCondition::Instruction(InstructionCondition {
+            mnemonic: Some("ld".into()),
+            operands: vec![
+                OperandCondition::Eq("a".into()),
+                OperandCondition::CanonEq("[hli]".into()),
+            ],
+        });
+        assert!(canonical.matches(&make_line("LD a, [hl+]"), &[]));
+
+        let zero_literal = StepCondition::Instruction(InstructionCondition {
+            mnemonic: Some("ld".into()),
+            operands: vec![
+                OperandCondition::Eq("b".into()),
+                OperandCondition::Any(vec![OperandCondition::IsZeroLiteral]),
+            ],
+        });
+        assert!(zero_literal.matches(&make_line("ld b, 0"), &[]));
+
+        let wrong_count = StepCondition::Instruction(InstructionCondition {
+            mnemonic: Some("ld".into()),
+            operands: vec![OperandCondition::Eq("b".into())],
+        });
+        assert!(!wrong_count.matches(&make_line("ld b, 0"), &[]));
+    }
+
+    #[test]
+    fn inc_dec_same_target_as_prev_ld_matches_expected_target() {
+        let prev = vec![make_line("ld hl, $c000")];
+        let current = make_line("inc hl");
+        let cond = StepCondition::IncDecSameTargetAsPrevLd { prev_step: 0 };
+        assert!(cond.matches(&current, &prev));
+
+        let wrong_prev = vec![make_line("nop")];
+        assert!(!cond.matches(&current, &wrong_prev));
+
+        let not_inc_dec = make_line("add hl, bc");
+        assert!(!cond.matches(&not_inc_dec, &prev));
+    }
+
+    #[test]
+    fn string_expr_chain_applies_transforms_for_str_eq() {
+        let prev = make_line("add a, hl");
+        let current = make_line("ld a, hl");
+
+        let left = StringExpr {
+            base: StringBase::Current(StringField::Code),
+            transforms: vec![
+                StringTransform::AfterPrefix("ld ".into()),
+                StringTransform::BeforeComma,
+                StringTransform::Trim,
+            ],
+        };
+
+        let right = StringExpr {
+            base: StringBase::Prev {
+                idx: 0,
+                field: StringField::Code,
+            },
+            transforms: vec![
+                StringTransform::AfterPrefix("add ".into()),
+                StringTransform::BeforeComma,
+                StringTransform::Trim,
+            ],
+        };
+
+        let cond = StepCondition::StrEq { left, right };
+        assert!(cond.matches(&current, std::slice::from_ref(&prev)));
+
+        let symbol = StringExpr {
+            base: StringBase::Current(StringField::Code),
+            transforms: vec![
+                StringTransform::StripTrailingColon,
+                StringTransform::SymbolLike,
+            ],
+        };
+        assert_eq!(
+            symbol.eval(&make_line("Label::"), &[]),
+            Some("Label".to_string())
+        );
     }
 }

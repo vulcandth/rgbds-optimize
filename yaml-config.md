@@ -49,15 +49,17 @@ packs:
 packs:
   rgbds:
     patterns:
-      - id: py_no_op_ld
+      - py_no_op_ld
       - id: pointless_jumps
         enabled_by_default: false
 ```
 
 Supported fields:
 
-- `packs.<pack_name>.patterns`: list of patterns
-- `packs.<pack_name>.patterns[].id` (required): key into the top-level `patterns` map
+- `packs.<pack_name>.patterns`: list of patterns (either bare IDs or objects)
+- `packs.<pack_name>.patterns[]` (bare string): shorthand for `{ id: "<string>" }`
+- `packs.<pack_name>.patterns[].id` (required when using object form): key into the
+  top-level `patterns` map
 - `packs.<pack_name>.patterns[].enabled_by_default` (optional, default `true`)
 
 Notes:
@@ -88,9 +90,14 @@ Supported fields:
 
 Each step:
 
-- `when` (required): a condition (see below)
+- `when` (required unless using shorthand): a condition (see below)
 - `rewind` (optional): integer; if the current step fails, the engine rewinds that
   many steps and retries.
+
+Shorthand:
+
+- A step may omit `when` and specify the condition directly:
+  `- { regex: POINTLESS_JUMPS_STEP1 }`
 
 ### Matching Semantics (important)
 
@@ -120,6 +127,7 @@ A `when:` condition is one of the following forms.
   field.
 - `{ text_regex: NAME }`: match `NAME` (from `regexes`) against the original
   `text` field.
+- `{ regex_in: [NAME, ...] }`: true if any referenced regex matches `code`.
 
 The regex engine is `fancy_regex`, so features like look-ahead are supported.
 
@@ -129,13 +137,18 @@ All of these operate on the normalized `code` field:
 
 - `{ code_eq: "..." }`
 - `{ code_ne: "..." }`
+- `{ code_in: ["...", "..."] }`
 - `{ code_starts_with: "..." }`
+- `{ code_starts_with_any: ["...", "..."] }`
 - `{ code_ends_with: "..." }`
+- `{ code_ends_with_any: ["...", "..."] }`
 - `{ code_contains: "..." }`
+- `{ code_contains_any: ["...", "..."] }`
 
 ### Named Conditions (reuse)
 
 - `{ cond: name }`: reference `conditions.name`.
+- `"name"`: shorthand for `{ cond: name }` anywhere a condition is expected.
 
 Named conditions are compiled with cycle detection.
 
@@ -203,7 +216,7 @@ Operand matchers:
 
 This is intentionally narrow and exists for parity with `optimize.py`.
 
-## `str_eq`: String Expressions
+## `str_eq` / `str_eq_in`: String Expressions
 
 `str_eq` compares two derived strings:
 
@@ -224,6 +237,14 @@ str_eq:
 
 If either side cannot be evaluated (for example, `prev.idx` is out of range), the
 condition is treated as **not matched**.
+
+`str_eq_in` compares the left side to a list of constant strings:
+
+```yaml
+str_eq_in:
+  left: <string-expr>
+  rights: ['a', 'b', 'c']
+```
 
 ### String Expression Base
 
