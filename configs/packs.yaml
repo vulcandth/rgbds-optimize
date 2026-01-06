@@ -273,27 +273,32 @@ conditions:
 patterns:
   py_redundant_arguments:
     name: Redundant arguments
+    description: "Bad: add a, X (or other arithmetic|logic operators). Good: add X"
     steps:
       - regex: REDUNDANT_ARGUMENTS
 
   py_nops:
     name: nops
+    description: "Bad: nop. Good: omit (unless you need it for timing or halt)"
     steps:
       - code_ne: halt
       - code_eq: nop
 
   py_no_op_ld:
     name: No-op ld
+    description: "Bad: ld b, b (or other identical registers). Good: omit (unless you need it for timing)"
     steps:
       - regex: NO_OP_LD_PY
 
   py_no_op_add_sub:
     name: No-op add|sub
+    description: "Bad: add|sub 0. Good: omit (unless you need the flag effects)"
     steps:
       - regex: NO_OP_ADD_SUB
 
   py_inefficient_hram_load:
     name: Inefficient HRAM load
+    description: "Bad: ld a, [hFoo] (or [rFoo]). Good: ldh a, [hFoo]"
     steps:
       - all:
           - { regex: INEFFICIENT_HRAM_LOAD }
@@ -301,6 +306,7 @@ patterns:
 
   py_inefficient_hram_store:
     name: Inefficient HRAM store
+    description: "Bad: ld [hFoo], a (or [rFoo]). Good: ldh [hFoo], a"
     steps:
       - all:
           - { regex: INEFFICIENT_HRAM_STORE }
@@ -309,26 +315,31 @@ patterns:
 
   py_a_eq_0:
     name: a = 0
+    description: "Bad: ld a, 0. Good: xor a (unless you need to preserve flags)"
     steps:
       - regex: A_EQ_0
 
   py_a_inc_dec:
     name: a++|a--
+    description: "Bad: add|sub 1. Good: inc|dec a (unless you need to set the carry flag)"
     steps:
       - regex: A_INC_DEC
 
   py_a_times_2:
     name: a *= 2
+    description: "Bad: sla a. Good: add a"
     steps:
       - code_eq: 'sla a'
 
   py_a_not:
     name: a = ~a
+    description: "Bad: xor $ff. Good: cpl"
     steps:
       - regex: A_NOT
 
   py_a_eq_n_minus_a:
     name: a = N - a
+    description: "Bad: ld b, a / ld a, N / sub b (or other intermediate registers). Good: cpl / add N + 1"
     steps:
       - regex: LD_R_A
       - regex: LD_A_IMM
@@ -347,6 +358,7 @@ patterns:
 
   py_a_eq_carry_pq:
     name: 'a = carry ? P : Q'
+    description: "Bad: ld a, P / jr c|nc, .ok / ld a, Q / .ok. Bad: ld a, P / jr c|nc, .ok / xor|inc|dec a / .ok. Good: solutions involving sbc a"
     steps:
       - regex: LD_A_IMM
       - regex: JUMP_NC_OR_C
@@ -364,6 +376,7 @@ patterns:
 
   py_a_inc_dec_if_carry:
     name: a++|a-- if carry
+    description: "Bad: jr nc, .ok / { inc|dec a }+ / .ok. Good: adc|sbc 0"
     steps:
       - regex: JUMP_NC
       - code_in: ['inc a', 'dec a']
@@ -378,6 +391,7 @@ patterns:
 
   py_a_inc_dec_if_not_carry:
     name: a++|a-- if not carry
+    description: "Bad: jr c, .ok / { inc|dec a }+ / .ok. Good: adc|sbc -1"
     steps:
       - regex: JUMP_C
       - code_in: ['inc a', 'dec a']
@@ -392,6 +406,7 @@ patterns:
 
   py_a_shift_right_3:
     name: a = a >> 3
+    description: "Bad: srl a / srl a / srl a. Good: rrca / rrca / rrca / and %00011111"
     steps:
       - regex: SRL_A
       - regex: SRL_A
@@ -399,6 +414,7 @@ patterns:
 
   py_a_eq_x_plusminus_carry:
     name: a = X +/- carry
+    description: "Bad: ld b, a / ld a, c|N / adc|sbc 0. Good: ld b, a / adc|sbc c|N / sub|add b"
     steps:
       - regex: LD_DST_A
       - all:
@@ -410,6 +426,7 @@ patterns:
 
   py_a_eq_carry_plusminus_x:
     name: a = carry +/- X
+    description: "Bad: ld b, a / ld a, 0 / adc|sbc c|N. Good: ld b, a / adc|sbc c|N / sub|add b"
     steps:
       - regex: LD_DST_A
       - regex: LD_A_0
@@ -427,6 +444,7 @@ patterns:
 
   py_reg_conditional_ternary:
     name: 'a|b|c|d|e|h|l = z|nz|c|nc ? P : Q'
+    description: "Bad: jr z|nz|c|nc, .p / ld a|b|c|d|e|h|l, Q / jr .ok / .p / (ld a|b|c|d|e|h|l, P | xor a) / (.ok | jr .ok). Good: ld a|b|c|d|e|h|l, Q / jr nz|z|nc|c, .ok / .p / (ld a|b|c|d|e|h|l, P | xor a) / .ok"
     steps:
       - regex: JUMP_NZ_OR_ZC
       - regex: LDH_R
@@ -445,6 +463,7 @@ patterns:
 
   py_a_and_x_eq_x:
     name: a & X == X
+    description: "Bad: and N / cp N. Good: or ~N / inc a (unless you need the masked value or the carry flag)"
     steps:
       - regex: AND_IMM
       - all:
@@ -459,6 +478,7 @@ patterns:
 
   py_a_mask_or:
     name: a = (a & MASK) | (b|c|d|e|h|l & ~MASK)
+    description: "Bad: and MASK / ld c, a / ld a, b / and ~MASK / or c. Good: xor b / and MASK / xor b"
     steps:
       - regex: AND_IMM
       - regex: LD_RH_A
@@ -491,6 +511,7 @@ patterns:
 
   py_pair_add_a_or_n:
     name: hl|bc|de += a|N
+    description: "Bad: add l|N / ld l, a / ld a, h|0 / adc 0|h / ld h, a (hl or bc or de). Good: add l|N / ld l, a / adc h / sub l / ld h, a"
     steps:
       - regex: ADD_A_LCE_OR_IMM
       - all:
@@ -508,6 +529,7 @@ patterns:
 
   py_pair_add_a_or_n_jump:
     name: hl|bc|de += a|N (jump)
+    description: "Okay: add l|N / ld l, a / jr nc, .noCarry / inc h / .noCarry. Good: add l|N / ld l, a / adc h / sub l / ld h, a"
     steps:
       - regex: ADD_A_LCE_OR_IMM
       - all:
@@ -526,6 +548,7 @@ patterns:
 
   py_pair_eq_foo_plus_a:
     name: hl|bc|de = Foo + a
+    description: "Bad: ld hl, Foo / add l / ld l, a / adc h / sub l / ld h, a. Good: add LOW(Foo) / ld l, a / adc HIGH(Foo) / sub l / ld h, a"
     steps:
       - regex: LD_PAIR_IMM
       - all:
@@ -556,6 +579,7 @@ patterns:
 
   py_reg_plus_carry:
     name: b|c|d|e|h|l += carry
+    description: "Bad: ld a, h|0 / adc 0|h / ld h, a. Good: jr nc, .noCarry / inc h / .noCarry"
     steps:
       - regex: LD_A_BCDEHL_OR_0
       - regex: ADC_BCDEHL_OR_0
@@ -590,6 +614,7 @@ patterns:
 
   py_reg_minus_carry:
     name: b|c|d|e|h|l -= carry
+    description: "Bad: ld a, h|0 / sbc 0|h / ld h, a. Good: jr nc, .noCarry / dec h / .noCarry"
     steps:
       - regex: LD_A_BCDEHL_OR_0
       - regex: SBC_BCDEHL_OR_0
@@ -624,6 +649,7 @@ patterns:
 
   py_pair_eq_a_mul_16:
     name: hl|bc|de = a * 16
+    description: "Bad: ld l, a / ld h, 0 / add hl, hl / add hl, hl / add hl, hl / add hl, hl. Good: solutions involving 'add a' or 'xor a' (if possible)"
     steps:
       - regex_in: [LD_LCE_A, LD_HBD_0]
       - all:
@@ -651,6 +677,7 @@ patterns:
 
   py_pair_eq_a_mul_16_rept:
     name: hl|bc|de = a * 16 (rept)
+    description: "Bad: ld l, a / ld h, 0 / rept 4 / add hl, hl / endr. Good: solutions involving 'add a' or 'xor a' (if possible)"
     steps:
       - regex_in: [LD_LCE_A, LD_HBD_0]
       - all:
@@ -677,12 +704,14 @@ patterns:
 
   py_hl_mul_2:
     name: hl *= 2
+    description: "Bad: sla l / rl h. Good: add hl, hl"
     steps:
       - code_eq: 'sla l'
       - code_eq: 'rl h'
 
   py_pair_eq_deref_foo:
     name: hl = *Foo
+    description: "Bad: ld a, [Foo] / ld l, a / ld a, [Foo+1] / ld h, a. Good: ld hl, Foo / ld a, [hli] / ld h, [hl] / ld l, a. Bad: ld a, [Foo] / ld h, a / ld a, [Foo+1] / ld l, a. Good: ld hl, Foo / ld a, [hli] / ld l, [hl] / ld h, a"
     steps:
       - regex: LD_A_MEM_NOT_HBD
       - regex: LD_LH_A
@@ -706,6 +735,7 @@ patterns:
 
   py_pair_load_pq:
     name: h,l|b,c|d,e = P,Q
+    description: "Bad: ld b, P / ld c, Q. Good: lb bc, P, Q"
     steps:
       - regex: LD_R_IMM
       - all:
@@ -728,12 +758,14 @@ patterns:
 
   py_deref_hl_eq_n:
     name: '*hl = N'
+    description: "Bad: ld a, N / ld [hl], a (unless you need N in a too). Good: ld [hl], N"
     steps:
       - regex: LD_A_IMM
       - code_eq: 'ld [hl], a'
 
   py_deref_hl_inc_dec:
     name: '*hl++|*hl--'
+    description: "Bad: ld a, [hl] / { inc|dec a }+ / ld [hl], a. Good: inc|dec [hl] (before ld a, [hl] if you need [hl] in a too)"
     steps:
       - code_eq: 'ld a, [hl]'
       - code_in: ['inc a', 'dec a']
@@ -742,52 +774,61 @@ patterns:
 
   py_deref_hl_inc_dec_eq_a:
     name: '*hl++|*hl-- = a'
+    description: "Bad: ld [hl], a / inc|dec hl. Good: ld [hli|hld], a"
     steps:
       - code_eq: 'ld [hl], a'
       - code_in: ['inc hl', 'dec hl']
 
   py_deref_hl_inc_dec_eq_n:
     name: '*hl++|*hl-- = N'
+    description: "Bad: ld [hl], N / inc|dec hl (unless you can't use a). Good: ld a, N / ld [hli|hld], a"
     steps:
       - regex: LD_MEMHL_IMM
       - code_in: ['inc hl', 'dec hl']
 
   py_a_eq_deref_hl_inc_dec:
     name: 'a = *hl++|*hl--'
+    description: "Bad: ld a, [hl] / inc|dec hl. Good: ld a, [hli|hld]"
     steps:
       - code_eq: 'ld a, [hl]'
       - code_in: ['inc hl', 'dec hl']
 
   py_deref_hl_inc_dec_eq_r:
     name: '*hl++|*hl-- = b|c|d|e'
+    description: "Bad: ld [hl], b|c|d|e|h|l / inc|dec hl (unless you can't use a). Good: ld a, b|c|d|e|h|l / ld [hli|hld], a"
     steps:
       - regex: LD_MEMHL_R
       - code_in: ['inc hl', 'dec hl']
 
   py_r_eq_deref_hl_inc_dec:
     name: 'b|c|d|e = *hl++|*hl--'
+    description: "Bad: ld b|c|d|e, [hl] / inc|dec hl (unless you can't use a). Good: ld a, [hli|hld] / ld b|c|d|e, a"
     steps:
       - regex: LD_R_MEMHL
       - code_in: ['inc hl', 'dec hl']
 
   py_a_eq_0_cmp:
     name: a == 0
+    description: "Bad: cp|or 0. Bad: and $ff. Good: and|or a"
     steps:
       - regex: CP_OR_0_OR_AND_FF
 
   py_a_eq_1_cmp:
     name: a == 1
+    description: "Okay: cp 1. Good: dec a (unless you need a or carry)"
     steps:
       - regex: CP_1
 
   py_ei_ret:
     name: ei + ret
+    description: "Bad: ei / ret. Good: reti"
     steps:
       - code_eq: ei
       - code_eq: ret
 
   py_tail_call:
     name: Tail call
+    description: "Bad: call Foo / ret (unless Foo messes with the stack). Good: jr|jp Foo"
     steps:
       - all:
           - { code_starts_with: 'call ' }
@@ -796,6 +837,7 @@ patterns:
 
   py_tail_farcall:
     name: Tail farcall
+    description: "Bad: farcall Foo / ret (unless Foo messes with the stack). Good: farjp Foo"
     steps:
       - all:
           - { code_starts_with: 'farcall ' }
@@ -804,12 +846,14 @@ patterns:
 
   py_tail_predef:
     name: Tail predef
+    description: "Bad: predef Foo / ret. Good: predef_jump Foo"
     steps:
       - code_starts_with: 'predef '
       - code_eq: ret
 
   py_fallthrough:
     name: Fallthrough
+    description: "Bad: call Foo / ret / Foo: .... Good: fall through to Foo: ..."
     steps:
       - all:
           - { code_starts_with: 'call ' }
@@ -824,6 +868,7 @@ patterns:
 
   py_conditional_call:
     name: Conditional call
+    description: "Bad: jr z|nz|c|nc, .skip / call Foo / .skip. Good: call nz|z|nc|c, Foo. Bad: jr z|nz|c|nc, .ok / call Foo / jr .ok. Good: call nz|z|nc|c, Foo / jr .ok"
     steps:
       - regex: JUMP_NZ_OR_ZC
       - all:
@@ -850,6 +895,7 @@ patterns:
 
   py_conditional_return:
     name: Conditional return
+    description: "Bad: jr z|nz|c|nc, .skip / ret / .skip. Good: ret nz|z|nc|c .bar"
     steps:
       - regex: JUMP_NZ_OR_ZC
       - code_eq: ret
@@ -862,6 +908,7 @@ patterns:
 
   py_conditional_fallthrough:
     name: Conditional fallthrough
+    description: "Bad: jr z|nz|c|nc, .foo / jr .bar / .foo: .... Good: jr nz|z|nc|c .bar / .foo: ..."
     steps:
       - regex: JUMP_NZ_OR_ZC
       - all:
@@ -877,6 +924,7 @@ patterns:
 
   py_call_hl:
     name: call hl
+    description: "Bad: ld bc|de, Foo / push bc|de / jp hl / Foo: .... Good: call _hl_ (defined in home as _hl_:: jp hl)"
     steps:
       - regex: LD_BCDE_IMM_NOT_HBD
       - all:
@@ -902,6 +950,7 @@ patterns:
 
   py_pointless_hli_hld:
     name: Pointless hli|hld
+    description: "Bad: { ld a, [hli|hld] | ld [hli|hld], a } / { ld hl, Foo | pop hl }. Good: { ld a, [hl] | ld [hl], a }"
     steps:
       - regex: POINTLESS_HLI_HLD_STEP1
       - rewind: 1
@@ -913,6 +962,7 @@ patterns:
 
   py_pointless_jumps:
     name: Pointless jumps
+    description: "Bad: jr|jp Foo / Foo: .... Good: fall through to Foo: ..."
     steps:
       - all:
           - { regex: POINTLESS_JUMPS_STEP1 }
@@ -933,6 +983,7 @@ patterns:
 
   py_useless_loads:
     name: Useless loads
+    description: "Bad: ld P, Q / ld P, R (unless the lds have side effects). Good: ld P, R"
     steps:
       - all:
           - is_ld_or_ldh
@@ -955,6 +1006,7 @@ patterns:
 
   py_redundant_loads:
     name: Redundant loads
+    description: "Bad: ld P, Q / ld Q, P (unless the lds have side effects). Good: ld P, Q"
     steps:
       - all:
           - is_ld_or_ldh
@@ -991,6 +1043,7 @@ patterns:
 
   py_similar_loads:
     name: Similar loads
+    description: "Bad: ld P, X / ld a, X (unless the lds have side effects). Good: ld a, X / ld P, a (if possible)"
     steps:
       - all:
           - is_ld_or_ldh
@@ -1009,6 +1062,7 @@ patterns:
 
   py_conditionally_load_0:
     name: Conditionally load 0
+    description: "Bad: and|or X / jr|jp nz, .foo / ld P, 0. Good: and|or X / jr|jp nz, .foo / ld P, a (if possible)"
     steps:
       - any:
           - { code_starts_with: 'and ' }
@@ -1018,23 +1072,27 @@ patterns:
 
   py_inefficient_prefix_opcodes:
     name: Inefficient prefix opcodes
+    description: "Bad: rl|rlc|rr|rrc a (unless you need the z flag set for 0). Good: rla|rlca|rra|rrca"
     steps:
       - regex: PREFIX_A
 
   py_redundant_and_or:
     name: Redundant and|or
+    description: "Bad: and|or|xor X / and|or a. Good: and|or|xor N"
     steps:
       - regex: AND_OR_XOR
       - regex: AND_OR_A
 
   py_pointless_and_or_a:
     name: Pointless and|or a
+    description: "Bad: and|or a / (any instruction that affects z and c). Good: (the instruction that affects z and c)"
     steps:
       - regex: AND_OR_A
       - regex: AFFECTS_ZC
 
   py_redundant_inc_dec:
     name: Redundant inc|dec
+    description: "Bad: ld P, N / inc|dec P (unless the inc|dec flags are needed). Good: ld P, X+/-1"
     steps:
       - regex: LD_ANY_IMM_NOT_REG_OR_MEM
       - any:
@@ -1065,6 +1123,7 @@ patterns:
 
   py_pair_eq_n_then_other_then_add:
     name: hl|bc|de = N / bc|de|hl = K / hl|bc|de += bc|de|hl
+    description: "Bad: hl|bc|de = N / bc|de|hl = K / hl|bc|de += bc|de|hl (unless K is needed in bc|de|hl). Good: hl|bc|de = N + K"
     steps:
       - regex: LD_PAIR_IMM
       - all:
@@ -1098,6 +1157,7 @@ patterns:
 
   py_pair_eq_n_then_inc_dec:
     name: hl|bc|de = N / ... / inc|dec hl|bc|de
+    description: "Bad: hl|bc|de = N / ... / inc|dec hl|bc|de. Good: hl|bc|de = N +/- 1 / ..."
     steps:
       - regex: LD_PAIR_IMM
       - rewind: 1
@@ -1132,6 +1192,7 @@ patterns:
 
   py_pair_eq_n_and_other_add:
     name: hl|bc|de = N / ... / bc|de|hl = K / hl|bc|de += bc|de|hl
+    description: "Bad: hl|bc|de = N / ... / bc|de|hl = K / hl|bc|de += bc|de|hl (unless K is needed in bc|de|hl). Good: hl|bc|de = N + K / ..."
     steps:
       - regex: LD_PAIR_IMM
       - rewind: 1
@@ -1142,6 +1203,7 @@ patterns:
 
   py_dec_a_then_addntimes:
     name: dec a, then AddNTimes
+    description: "Bad: ld hl, Foo / dec a / ld bc, BAR / call|rst AddNTimes. Bad: ld hl, Foo / ld bc, BAR / dec a / call|rst AddNTimes. Good: ld hl, Foo - BAR / ld bc, BAR / call|rst AddNTimes"
     steps:
       - regex: LD_HL_IMM
       - any:
@@ -1172,6 +1234,7 @@ patterns:
 
   py_redundant_ret:
     name: Redundant ret
+    description: "Bad: ret z|nz|c|nc / ret. Bad: ret / ret z|nz|c|nc. Bad: ret z / ret nz. Good: ret"
     steps:
       - any:
           - { code_eq: ret }
@@ -1194,12 +1257,14 @@ patterns:
 
   py_stub_function:
     name: Stub function
+    description: "Bad: call [z|nz|c|nc,] Foo / ... / Foo: / ret. Good: (do nothing). Bad: jr|jp [z|nz|c|nc,] Foo / ... / Foo: / ret. Good: ret [z|nz|c|nc]"
     steps:
       - label_definition_line
       - code_eq: ret
 
   py_stub_jump:
     name: Stub jump
+    description: "Bad: call [z|nz|c|nc,] Foo / ... / Foo: / jr Bar. Good: call [z|nz|c|nc,] Bar. Bad: jr|jp [z|nz|c|nc,] Foo / ... / Foo: / jr Bar. Good: jr|jp [z|nz|c|nc,] Bar"
     steps:
       - label_definition_line
       - all:
@@ -1208,6 +1273,7 @@ patterns:
 
   py_wram_inc_dec:
     name: Inefficient WRAM increment/decrement
+    description: "Bad: ld a, [wFoo] / inc|dec a / ld [wFoo], a (unless hl needs to be preserved). Good: ld hl, wFoo / inc|dec [hl]"
     steps:
       - regex: LD_WRAM_LOAD
       - code_in: ['inc a', 'dec a']
@@ -1226,12 +1292,14 @@ patterns:
 
   py_trailing_string_space:
     name: Trailing string space
+    description: 'Bad: text "Hello! " (unless it''s followed by a text command). Good: text "Hello!"'
     steps:
       - regex: TEXT_TRAILING_SPACE
       - not: { regex: TEXT_COMMAND_FOLLOWS }
 
   no_op_add_sub:
     name: No-op add|sub
+    description: "Bad: add|sub 0. Good: omit (unless you need the flag effects)"
     steps:
       - any:
           - instruction:
@@ -1255,6 +1323,7 @@ patterns:
 
   ld_a_from_hli:
     name: Load a from [hli]/[hl+]
+    description: "Load a from [hli]/[hl+]"
     steps:
       - instruction:
           mnemonic: ld
