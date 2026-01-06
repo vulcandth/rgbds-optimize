@@ -205,39 +205,38 @@ fn parse_args(args: Vec<OsString>) -> Args {
 
     let mut i = 0usize;
     while i < args.len() {
-        if args[i] == "--pack" {
-            if let Some(v) = args.get(i + 1) {
-                pack_path = PathBuf::from(v);
-                i += 2;
-                continue;
-            }
+        if args[i] == "--pack"
+            && let Some(v) = args.get(i + 1)
+        {
+            pack_path = PathBuf::from(v);
+            i += 2;
+            continue;
         }
 
-        if args[i] == "--file-list" {
-            if let Some(v) = args.get(i + 1) {
-                file_list_path = Some(PathBuf::from(v));
-                i += 2;
-                continue;
-            }
+        if args[i] == "--file-list"
+            && let Some(v) = args.get(i + 1)
+        {
+            file_list_path = Some(PathBuf::from(v));
+            i += 2;
+            continue;
         }
 
-        if args[i] == "--pprof" {
-            if let Some(v) = args.get(i + 1) {
-                pprof_out = Some(PathBuf::from(v));
-                i += 2;
-                continue;
-            }
+        if args[i] == "--pprof"
+            && let Some(v) = args.get(i + 1)
+        {
+            pprof_out = Some(PathBuf::from(v));
+            i += 2;
+            continue;
         }
 
         #[cfg(all(feature = "pprof", unix))]
-        if args[i] == "--pprof-frequency" {
-            if let Some(v) = args.get(i + 1).and_then(|v| v.to_str()) {
-                if let Ok(parsed) = v.parse::<i32>() {
-                    pprof_frequency_hz = parsed;
-                    i += 2;
-                    continue;
-                }
-            }
+        if args[i] == "--pprof-frequency"
+            && let Some(v) = args.get(i + 1).and_then(|v| v.to_str())
+            && let Ok(parsed) = v.parse::<i32>()
+        {
+            pprof_frequency_hz = parsed;
+            i += 2;
+            continue;
         }
 
         inputs.push(PathBuf::from(&args[i]));
