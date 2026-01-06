@@ -89,9 +89,7 @@ regexes:
 
 conditions:
   is_ld_or_ldh:
-    any:
-      - { code_starts_with: 'ld ' }
-      - { code_starts_with: 'ldh ' }
+    code_starts_with_any: ['ld ', 'ldh ']
 
   label_definition_line:
     all:
@@ -103,51 +101,36 @@ conditions:
             - { code_eq: endr }
             - { code_eq: endm }
 
-  not_really_hram:
-    any:
-      - { code_contains: rROMB }
-      - { code_contains: rROMB0 }
-      - { code_contains: rROMB1 }
-      - { code_contains: rRAMG }
-      - { code_contains: rRAMB }
-      - { code_contains: rRTCLATCH }
-      - { code_contains: rRTCREG }
+  # These symbols are not HRAM despite matching the broad [h|r] prefix heuristic.
+  is_bank_reg_symbol:
+    code_contains_any: [rROMB, rROMB0, rROMB1, rRAMG, rRAMB, rRTCLATCH, rRTCREG]
 
   volatile_operand:
-    any:
-      - { code_contains: '[hli]' }
-      - { code_contains: '[hld]' }
-      - { code_contains: '[hl+]' }
-      - { code_contains: '[hl-]' }
-      - { code_contains: '[rJOYP]' }
-      - { code_contains: '[rBGPD]' }
-      - { code_contains: '[rOBPD]' }
+    code_contains_any: ['[hli]', '[hld]', '[hl+]', '[hl-]', '[rJOYP]', '[rBGPD]', '[rOBPD]']
 
-  pair_eq_a_mul_16_add:
+  # Used by the "= a * 16" patterns: `add xx, xx` must operate on the same pair
+  # implied by the previous `ld` target (h/l, b/c, or d/e).
+  mul16_add_pair_matches_prev_ld:
     any:
       - all:
           - { code_eq: 'add hl, hl' }
-          - any:
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'h' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'l' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'H' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'L' } }
+          - str_eq_in:
+              left: { prev: { idx: 0, field: code }, byte_at: 3 }
+              rights: ['h', 'l', 'H', 'L']
       - all:
           - { code_eq: 'add bc, bc' }
-          - any:
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'b' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'c' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'B' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'C' } }
+          - str_eq_in:
+              left: { prev: { idx: 0, field: code }, byte_at: 3 }
+              rights: ['b', 'c', 'B', 'C']
       - all:
           - { code_eq: 'add de, de' }
-          - any:
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'd' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'e' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'D' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'E' } }
+          - str_eq_in:
+              left: { prev: { idx: 0, field: code }, byte_at: 3 }
+              rights: ['d', 'e', 'D', 'E']
 
-  pair_three_step3:
+  # In the 3-step pair-add pattern, ensure the `add` operands match the previously
+  # loaded pair registers.
+  pair_add_three_step_matches_prev_pairs:
     all:
       - { regex: ADD_PAIR_THREE_STEP }
       - str_eq:
@@ -157,7 +140,9 @@ conditions:
           left: { current: code, byte_at: 8 }
           right: { prev: { idx: 1, field: code }, byte_at: 3 }
 
-  pair_dotdot_step2:
+  # Middle "..." line for pair patterns: must not be a label or control-flow, and
+  # must not touch the active pair via memory/stack (push/pop/[hl], etc.).
+  pair_eq_n_gap_is_safe:
     all:
       - not: { regex: CONTROL_FLOW_PREFIX }
       - not:
@@ -192,62 +177,56 @@ conditions:
   pair_add_step2:
     any:
       - all:
-          - any:
-              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'l' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'c' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'e' } }
+          - str_eq_in:
+              left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }
+              rights: ['l', 'c', 'e']
           - str_eq:
               left: { current: code, after_prefix: 'ld ', before_comma: true, trim: true }
               right: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }
       - all:
-          - any:
-              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'l' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'c' } }
-              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'e' } }
+          - str_eq_in:
+              left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }
+              rights: ['l', 'c', 'e']
           - str_eq:
               left: { current: code, after_prefix: 'ld ', before_comma: true, trim: true }
               right: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }
       - all:
           - not:
               any:
-                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'l' } }
-                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'c' } }
-                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'e' } }
-                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'l' } }
-                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'c' } }
-                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'e' } }
+                - str_eq_in:
+                    left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }
+                    rights: ['l', 'c', 'e']
+                - str_eq_in:
+                    left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }
+                    rights: ['l', 'c', 'e']
 
   pair_add_step3:
     any:
       - all:
-          - any:
-              - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'h' } }
-              - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'b' } }
-              - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'd' } }
+          - str_eq_in:
+              left: { current: code, after_prefix: 'ld a, ', trim: true }
+              rights: ['h', 'b', 'd']
           - str_eq:
               left: { current: code, after_prefix: 'ld a, ', trim: true }
               right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
       - not:
-          any:
-            - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'h' } }
-            - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'b' } }
-            - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'd' } }
+          str_eq_in:
+            left: { current: code, after_prefix: 'ld a, ', trim: true }
+            rights: ['h', 'b', 'd']
 
   pair_add_step4:
     any:
       - all:
-          - any:
-              - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'h' } }
-              - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'b' } }
-              - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'd' } }
+          - str_eq_in:
+              left: { current: code, after_prefix: 'adc ', trim: true }
+              rights: ['h', 'b', 'd']
           - str_eq:
               left: { current: code, after_prefix: 'adc ', trim: true }
               right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
       - not:
-          any:
-            - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'h' } }
-            - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'b' } }
-            - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'd' } }
+          str_eq_in:
+            left: { current: code, after_prefix: 'adc ', trim: true }
+            rights: ['h', 'b', 'd']
 
   pair_add_step5:
     str_eq:
@@ -263,9 +242,7 @@ conditions:
     any:
       - { regex: LDH_R }
       - all:
-          - any:
-              - { code_eq: 'xor a' }
-              - { code_eq: 'xor a, a' }
+          - code_in: ['xor a', 'xor a, a']
           - any:
               - str_eq:
                   left: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true }
@@ -321,7 +298,7 @@ patterns:
       - when:
           all:
             - { regex: INEFFICIENT_HRAM_LOAD }
-            - not: { cond: not_really_hram }
+            - not: { cond: is_bank_reg_symbol }
 
   py_inefficient_hram_store:
     name: Inefficient HRAM store
@@ -330,7 +307,7 @@ patterns:
           all:
             - { regex: INEFFICIENT_HRAM_STORE }
             - { code_ends_with: ', a' }
-            - not: { cond: not_really_hram }
+            - not: { cond: is_bank_reg_symbol }
 
   py_a_eq_0:
     name: a = 0
@@ -680,15 +657,10 @@ patterns:
   py_pair_eq_a_mul_16:
     name: hl|bc|de = a * 16
     steps:
-      - when:
-          any:
-            - { regex: LD_LCE_A }
-            - { regex: LD_HBD_0 }
+      - when: { regex_in: [LD_LCE_A, LD_HBD_0] }
       - when:
           all:
-            - any:
-                - { regex: LD_LCE_A }
-                - { regex: LD_HBD_0 }
+            - regex_in: [LD_LCE_A, LD_HBD_0]
             - not:
                 str_eq:
                   left: { current: code }
@@ -705,23 +677,18 @@ patterns:
                   before_comma: true
                   trim: true
                   pair_reg: true
-      - when: { cond: pair_eq_a_mul_16_add }
-      - when: { cond: pair_eq_a_mul_16_add }
-      - when: { cond: pair_eq_a_mul_16_add }
-      - when: { cond: pair_eq_a_mul_16_add }
+      - when: { cond: mul16_add_pair_matches_prev_ld }
+      - when: { cond: mul16_add_pair_matches_prev_ld }
+      - when: { cond: mul16_add_pair_matches_prev_ld }
+      - when: { cond: mul16_add_pair_matches_prev_ld }
 
   py_pair_eq_a_mul_16_rept:
     name: hl|bc|de = a * 16 (rept)
     steps:
-      - when:
-          any:
-            - { regex: LD_LCE_A }
-            - { regex: LD_HBD_0 }
+      - when: { regex_in: [LD_LCE_A, LD_HBD_0] }
       - when:
           all:
-            - any:
-                - { regex: LD_LCE_A }
-                - { regex: LD_HBD_0 }
+            - regex_in: [LD_LCE_A, LD_HBD_0]
             - not:
                 str_eq:
                   left: { current: code }
@@ -739,7 +706,7 @@ patterns:
                   trim: true
                   pair_reg: true
       - when: { regex: REPT_4_CI }
-      - when: { cond: pair_eq_a_mul_16_add }
+      - when: { cond: mul16_add_pair_matches_prev_ld }
       - when: { regex: ENDR_CI }
 
   py_hl_mul_2:
@@ -1212,7 +1179,7 @@ patterns:
     steps:
       - when: { regex: LD_PAIR_IMM }
       - rewind: 1
-        when: { cond: pair_dotdot_step2 }
+        when: { cond: pair_eq_n_gap_is_safe }
       - rewind: 1
         when:
           any:
@@ -1246,10 +1213,10 @@ patterns:
     steps:
       - when: { regex: LD_PAIR_IMM }
       - rewind: 1
-        when: { cond: pair_dotdot_step2 }
+        when: { cond: pair_eq_n_gap_is_safe }
       - when: { regex: LD_PAIR_IMM }
       - rewind: 1
-        when: { cond: pair_three_step3 }
+        when: { cond: pair_add_three_step_matches_prev_pairs }
 
   py_dec_a_then_addntimes:
     name: dec a, then AddNTimes
