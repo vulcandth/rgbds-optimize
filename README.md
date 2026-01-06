@@ -10,6 +10,8 @@ This repository contains:
 - The original `optimize.py` reference implementation.
 - A runtime-loaded YAML configuration in `configs/packs.yaml`.
 
+See `yaml-config.md` for the YAML schema and building blocks.
+
 ## Install and Run
 
 ### Rust (recommended)
