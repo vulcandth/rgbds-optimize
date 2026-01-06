@@ -230,14 +230,13 @@ fn parse_args(args: Vec<OsString>) -> Args {
         }
 
         #[cfg(all(feature = "pprof", unix))]
-        if args[i] == "--pprof-frequency" {
-            if let Some(v) = args.get(i + 1).and_then(|v| v.to_str()) {
-                if let Ok(parsed) = v.parse::<i32>() {
-                    pprof_frequency_hz = parsed;
-                    i += 2;
-                    continue;
-                }
-            }
+        if args[i] == "--pprof-frequency"
+            && let Some(v) = args.get(i + 1).and_then(|v| v.to_str())
+            && let Ok(parsed) = v.parse::<i32>()
+        {
+            pprof_frequency_hz = parsed;
+            i += 2;
+            continue;
         }
 
         inputs.push(PathBuf::from(&args[i]));
