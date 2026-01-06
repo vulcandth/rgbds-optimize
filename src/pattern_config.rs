@@ -113,10 +113,14 @@ enum ConditionYaml {
     TextRegex { text_regex: String },
     StrEq { str_eq: Box<StrEqYaml> },
     CodeEq { code_eq: String },
+    CodeIn { code_in: Vec<String> },
     CodeNe { code_ne: String },
     CodeStartsWith { code_starts_with: String },
+    CodeStartsWithAny { code_starts_with_any: Vec<String> },
     CodeEndsWith { code_ends_with: String },
+    CodeEndsWithAny { code_ends_with_any: Vec<String> },
     CodeContains { code_contains: String },
+    CodeContainsAny { code_contains_any: Vec<String> },
     Cond { cond: String },
     Any { any: Vec<ConditionYaml> },
     All { all: Vec<ConditionYaml> },
@@ -363,14 +367,45 @@ impl<'a> ConditionCompiler<'a> {
             }
 
             ConditionYaml::CodeEq { code_eq } => StepCondition::CodeEq(code_eq),
+
+            ConditionYaml::CodeIn { code_in } => StepCondition::Any(
+                code_in
+                    .into_iter()
+                    .map(StepCondition::CodeEq)
+                    .collect::<Vec<_>>(),
+            ),
+
             ConditionYaml::CodeNe { code_ne } => StepCondition::CodeNe(code_ne),
             ConditionYaml::CodeStartsWith { code_starts_with } => {
                 StepCondition::CodeStartsWith(code_starts_with)
             }
+
+            ConditionYaml::CodeStartsWithAny { code_starts_with_any } => StepCondition::Any(
+                code_starts_with_any
+                    .into_iter()
+                    .map(StepCondition::CodeStartsWith)
+                    .collect::<Vec<_>>(),
+            ),
+
             ConditionYaml::CodeEndsWith { code_ends_with } => {
                 StepCondition::CodeEndsWith(code_ends_with)
             }
+
+            ConditionYaml::CodeEndsWithAny { code_ends_with_any } => StepCondition::Any(
+                code_ends_with_any
+                    .into_iter()
+                    .map(StepCondition::CodeEndsWith)
+                    .collect::<Vec<_>>(),
+            ),
+
             ConditionYaml::CodeContains { code_contains } => StepCondition::CodeContains(code_contains),
+
+            ConditionYaml::CodeContainsAny { code_contains_any } => StepCondition::Any(
+                code_contains_any
+                    .into_iter()
+                    .map(StepCondition::CodeContains)
+                    .collect::<Vec<_>>(),
+            ),
 
             ConditionYaml::Cond { cond } => self.compile_named(&cond)?,
 
@@ -497,8 +532,15 @@ mod tests {
         let yaml = r#"
 regexes:
     NO_OP_LD: '^ld ([abcdehl]), \1$'
-
 conditions:
+    op_is_one_of:
+        code_in: ['xor a', 'xor a, a']
+    starts_with_any:
+        code_starts_with_any: ['ld ', 'ldh ']
+    ends_with_any:
+        code_ends_with_any: [', a', ', hl']
+    contains_any:
+        code_contains_any: ['[hl]', '[hli]']
     not_halt:
         not:
             code_eq: halt
