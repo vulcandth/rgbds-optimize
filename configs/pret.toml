@@ -1,5 +1,8 @@
 pack = "pret"
 
+# DEPRECATED: This file is no longer used by the Rust optimizer.
+# Use `configs/packs.yaml` and select `--pack pret` instead.
+
 # Patterns imported from optimize.py.
 #
 # This pack aims to mirror optimize.py's full pattern inventory.

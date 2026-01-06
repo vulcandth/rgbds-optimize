@@ -1,16 +1,6 @@
 pack = "core"
 
-# This pack is intended to be gbdev-generic.
-# The `builtin` values map to built-in predicates/steps in rgbds-optimize.
-
-[[pattern]]
-name = "No-op ld"
-builtin = "no_op_ld"
-
-[[pattern]]
-name = "No-op add|sub"
-builtin = "no_op_add_sub"
-
-[[pattern]]
-name = "Load a from [hli]/[hl+]"
-builtin = "ld_a_from_hli"
+# DEPRECATED: TOML pack configs are no longer supported.
+#
+# Use the runtime YAML config instead:
+#   --config configs/packs.yaml --pack core

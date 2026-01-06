@@ -112,10 +112,15 @@ def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=Path, nargs="+", help="File or dir to scan")
     parser.add_argument(
-        "--pack",
+        "--config",
         type=Path,
-        default=Path("configs/pret.toml"),
-        help="Pattern pack to use for the Rust binary.",
+        default=Path("configs/packs.yaml"),
+        help="YAML configuration file to use for the Rust binary.",
+    )
+    parser.add_argument(
+        "--pack",
+        default="pret",
+        help="Pack name to select from the YAML configuration (default: pret).",
     )
     parser.add_argument(
         "--python",
@@ -182,6 +187,8 @@ def main(argv: Sequence[str]) -> int:
         rs_cmd = [
             *cargo_args,
             "--",
+            "--config",
+            str(args.config),
             "--pack",
             str(args.pack),
             "--file-list",

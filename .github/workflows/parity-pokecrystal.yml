@@ -34,4 +34,4 @@ jobs:
           git checkout --detach FETCH_HEAD
 
       - name: Parity check (Python vs Rust)
-        run: python3 tools/parity.py --pack configs/pret.toml --cargo-profile release pokecrystal
+        run: python3 tools/parity.py --config configs/packs.yaml --pack pret --cargo-profile release pokecrystal
