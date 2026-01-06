@@ -77,7 +77,7 @@ patterns:
     description: Detect unconditional jumps to the next label.
     steps:
       - when: { regex: POINTLESS_JUMPS_STEP1 }
-      - when: { builtin: jump_target_label, jump_idx: 0 }
+      - when: { regex: POINTLESS_JUMPS_STEP2 }
 ```
 
 Supported fields:
@@ -202,17 +202,6 @@ Operand matchers:
   operand of the `ld` matched `N` steps earlier.
 
 This is intentionally narrow and exists for parity with `optimize.py`.
-
-### Builtins (legacy / internal)
-
-The loader supports:
-
-- `{ builtin: name }`
-- `{ builtin: { name: name, jump_idx: 0 } }`
-
-These are Rust-implemented predicates used for parity with `optimize.py`.
-New patterns should generally prefer expressing logic via `conditions` +
-`str_eq` + `instruction` unless you truly need a builtin.
 
 ## `str_eq`: String Expressions
 

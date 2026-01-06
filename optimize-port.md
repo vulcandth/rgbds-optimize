@@ -132,9 +132,6 @@ The community goal is best met by separating “engine” from “pattern defini
     - `allow_rewind: N`
 - [x] Implement a built-in “core” pack in Rust that matches today’s `optimize.py` patterns.
 - [x] Split Pret-specific rules into a separate optional config pack (disabled by default).
-- [x] Decide how to handle patterns that are hard to express declaratively:
-  - Allow “builtin predicates” referenced from config by name.
-  - Keep the public DSL stable for community contributions.
 
 ## 7. RGBDS Syntax Coverage Checklist (Beyond Pret Conventions)
 
@@ -195,7 +192,6 @@ Once output parity is proven, optimize.
   - Outcome (pokecrystal-up, 3015 files): Rust ~1.46s vs Python ~25.8s (~17.6x faster).
 - [x] Targeted optimizations that should not affect correctness:
   - Regexes compile once per process (static `LazyLock<Regex>` + `PatternStep::regex`)
-  - Builtin pattern steps are cached across files (prevents rebuilding/copying per file)
   - Instruction parsing is done via a lightweight tokenizer (`parse_instruction`)
   - Parallelism intentionally not used to preserve deterministic output
 
