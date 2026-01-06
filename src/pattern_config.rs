@@ -25,9 +25,15 @@ pub enum ConfigError {
     UnknownPack(String),
     EmptyPatterns,
     DuplicatePatternName(String),
-    UnknownPatternId { pack: String, id: String },
+    UnknownPatternId {
+        pack: String,
+        id: String,
+    },
     UnknownRegex(String),
-    InvalidRegex { name: String, err: fancy_regex::Error },
+    InvalidRegex {
+        name: String,
+        err: fancy_regex::Error,
+    },
     InvalidOperand(String),
     UnknownCondition(String),
     ConditionCycle(String),
@@ -119,26 +125,66 @@ enum StepYaml {
 enum ConditionYaml {
     /// Shorthand for `{ cond: NAME }`.
     CondName(String),
-    Regex { regex: String },
-    RegexIn { regex_in: Vec<String> },
-    TextRegex { text_regex: String },
-    StrEq { str_eq: Box<StrEqYaml> },
-    StrEqIn { str_eq_in: Box<StrEqInYaml> },
-    CodeEq { code_eq: String },
-    CodeIn { code_in: Vec<String> },
-    CodeNe { code_ne: String },
-    CodeStartsWith { code_starts_with: String },
-    CodeStartsWithAny { code_starts_with_any: Vec<String> },
-    CodeEndsWith { code_ends_with: String },
-    CodeEndsWithAny { code_ends_with_any: Vec<String> },
-    CodeContains { code_contains: String },
-    CodeContainsAny { code_contains_any: Vec<String> },
-    Cond { cond: String },
-    Any { any: Vec<ConditionYaml> },
-    All { all: Vec<ConditionYaml> },
-    Not { not: Box<ConditionYaml> },
-    Instruction { instruction: InstructionYaml },
-    IncDecSameTargetAsPrevLd { inc_dec_same_target_as_prev_ld: usize },
+    Regex {
+        regex: String,
+    },
+    RegexIn {
+        regex_in: Vec<String>,
+    },
+    TextRegex {
+        text_regex: String,
+    },
+    StrEq {
+        str_eq: Box<StrEqYaml>,
+    },
+    StrEqIn {
+        str_eq_in: Box<StrEqInYaml>,
+    },
+    CodeEq {
+        code_eq: String,
+    },
+    CodeIn {
+        code_in: Vec<String>,
+    },
+    CodeNe {
+        code_ne: String,
+    },
+    CodeStartsWith {
+        code_starts_with: String,
+    },
+    CodeStartsWithAny {
+        code_starts_with_any: Vec<String>,
+    },
+    CodeEndsWith {
+        code_ends_with: String,
+    },
+    CodeEndsWithAny {
+        code_ends_with_any: Vec<String>,
+    },
+    CodeContains {
+        code_contains: String,
+    },
+    CodeContainsAny {
+        code_contains_any: Vec<String>,
+    },
+    Cond {
+        cond: String,
+    },
+    Any {
+        any: Vec<ConditionYaml>,
+    },
+    All {
+        all: Vec<ConditionYaml>,
+    },
+    Not {
+        not: Box<ConditionYaml>,
+    },
+    Instruction {
+        instruction: InstructionYaml,
+    },
+    IncDecSameTargetAsPrevLd {
+        inc_dec_same_target_as_prev_ld: usize,
+    },
 }
 
 #[derive(Clone, Deserialize)]
@@ -310,13 +356,11 @@ impl OperandYaml {
                 }
                 crate::OperandCondition::IsZeroLiteral
             }
-            OperandYaml::Any { any } => {
-                crate::OperandCondition::Any(
-                    any.into_iter()
-                        .map(OperandYaml::into_runtime)
-                        .collect::<Result<Vec<_>, _>>()?,
-                )
-            }
+            OperandYaml::Any { any } => crate::OperandCondition::Any(
+                any.into_iter()
+                    .map(OperandYaml::into_runtime)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
         })
     }
 }
@@ -428,7 +472,9 @@ impl<'a> ConditionCompiler<'a> {
                 StepCondition::CodeStartsWith(code_starts_with)
             }
 
-            ConditionYaml::CodeStartsWithAny { code_starts_with_any } => StepCondition::Any(
+            ConditionYaml::CodeStartsWithAny {
+                code_starts_with_any,
+            } => StepCondition::Any(
                 code_starts_with_any
                     .into_iter()
                     .map(StepCondition::CodeStartsWith)
@@ -446,7 +492,9 @@ impl<'a> ConditionCompiler<'a> {
                     .collect::<Vec<_>>(),
             ),
 
-            ConditionYaml::CodeContains { code_contains } => StepCondition::CodeContains(code_contains),
+            ConditionYaml::CodeContains { code_contains } => {
+                StepCondition::CodeContains(code_contains)
+            }
 
             ConditionYaml::CodeContainsAny { code_contains_any } => StepCondition::Any(
                 code_contains_any
@@ -494,7 +542,10 @@ pub fn load_pattern_pack_yaml(contents: &str, pack_name: &str) -> Result<Pattern
 
     let mut compiled_regexes: HashMap<String, Arc<FancyRegex>> = HashMap::new();
     for (name, re) in root.regexes {
-        let compiled = FancyRegex::new(&re).map_err(|err| ConfigError::InvalidRegex { name: name.clone(), err })?;
+        let compiled = FancyRegex::new(&re).map_err(|err| ConfigError::InvalidRegex {
+            name: name.clone(),
+            err,
+        })?;
         compiled_regexes.insert(name, Arc::new(compiled));
     }
 

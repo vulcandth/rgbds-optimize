@@ -348,13 +348,21 @@ impl StringExpr {
                     s = s.strip_prefix(prefix).unwrap_or("").to_string();
                 }
                 StringTransform::BeforeComma => {
-                    s = s.split_once(',').map(|(lhs, _)| lhs.trim()).unwrap_or("").to_string();
+                    s = s
+                        .split_once(',')
+                        .map(|(lhs, _)| lhs.trim())
+                        .unwrap_or("")
+                        .to_string();
                 }
                 StringTransform::AfterComma => {
                     s = split_after_comma(&s).unwrap_or("").to_string();
                 }
                 StringTransform::AfterCommaRaw => {
-                    s = s.split_once(',').map(|(_, rhs)| rhs).unwrap_or("").to_string();
+                    s = s
+                        .split_once(',')
+                        .map(|(_, rhs)| rhs)
+                        .unwrap_or("")
+                        .to_string();
                 }
                 StringTransform::PairReg => {
                     s = match s.as_str() {
