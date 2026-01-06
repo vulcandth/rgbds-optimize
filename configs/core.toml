@@ -1,6 +1,0 @@
-pack = "core"
-
-# DEPRECATED: TOML pack configs are no longer supported.
-#
-# Use the runtime YAML config instead:
-#   --config configs/packs.yaml --pack core

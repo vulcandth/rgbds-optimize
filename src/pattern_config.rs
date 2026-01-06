@@ -184,6 +184,9 @@ struct StringExprYaml {
     strip_trailing_colon: Option<bool>,
 
     #[serde(default)]
+    symbol_like: Option<bool>,
+
+    #[serde(default)]
     trim: Option<bool>,
 }
 
@@ -234,6 +237,10 @@ impl StringExprYaml {
         }
         if self.strip_trailing_colon.unwrap_or(false) {
             transforms.push(crate::StringTransform::StripTrailingColon);
+        }
+
+        if self.symbol_like.unwrap_or(false) {
+            transforms.push(crate::StringTransform::SymbolLike);
         }
         if self.trim.unwrap_or(false) {
             transforms.push(crate::StringTransform::Trim);

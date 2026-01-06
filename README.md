@@ -26,6 +26,8 @@ cargo run --release -- .
 cargo run --release -- --config configs/packs.yaml --pack pret path/to/repo
 ```
 
+Note: legacy TOML-based pack configs have been removed; use `configs/packs.yaml`.
+
 ### Python (reference)
 
 ```bash
@@ -44,18 +46,21 @@ Example (abridged):
 
 ```yaml
 regexes:
-	NO_OP_LD: '^ld ([abcdehl]), \1$'
+
+  NO_OP_LD: '^ld ([abcdehl]), \1$'
 
 patterns:
-	py_no_op_ld:
-		name: No-op ld
-		steps:
-			- when: { regex: NO_OP_LD }
+
+  py_no_op_ld:
+    name: No-op ld
+    steps:
+      - when: { regex: NO_OP_LD }
 
 packs:
-	rgbds:
-		patterns:
-			- id: py_no_op_ld
+
+  rgbds:
+    patterns:
+      - id: py_no_op_ld
 ```
 
 ## Compatibility

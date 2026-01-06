@@ -118,6 +118,176 @@ conditions:
       - { code_contains: '[rBGPD]' }
       - { code_contains: '[rOBPD]' }
 
+  pair_eq_a_mul_16_add:
+    any:
+      - all:
+          - { code_eq: 'add hl, hl' }
+          - any:
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'h' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'l' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'H' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'L' } }
+      - all:
+          - { code_eq: 'add bc, bc' }
+          - any:
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'b' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'c' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'B' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'C' } }
+      - all:
+          - { code_eq: 'add de, de' }
+          - any:
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'd' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'e' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'D' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'E' } }
+
+  pair_three_step3:
+    all:
+      - { regex: ADD_PAIR_THREE_STEP }
+      - str_eq:
+          left: { current: code, byte_at: 4 }
+          right: { prev: { idx: 0, field: code }, byte_at: 3 }
+      - str_eq:
+          left: { current: code, byte_at: 8 }
+          right: { prev: { idx: 1, field: code }, byte_at: 3 }
+
+  pair_dotdot_step2:
+    all:
+      - not: { regex: CONTROL_FLOW_PREFIX }
+      - not:
+          all:
+            - str_eq: { left: { current: code, byte_at: 0 }, right: { prev: { idx: 0, field: code }, byte_at: 0 } }
+            - str_eq: { left: { current: code, byte_at: 1 }, right: { prev: { idx: 0, field: code }, byte_at: 1 } }
+            - str_eq: { left: { current: code, byte_at: 2 }, right: { prev: { idx: 0, field: code }, byte_at: 2 } }
+            - str_eq: { left: { current: code, byte_at: 3 }, right: { prev: { idx: 0, field: code }, byte_at: 3 } }
+            - str_eq: { left: { current: code, byte_at: 4 }, right: { prev: { idx: 0, field: code }, byte_at: 4 } }
+      - not: { code_starts_with: '.' }
+      - not: { code_ends_with: ':' }
+      - any:
+          - all:
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'h' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 4 }, right: { const: 'l' } }
+              - not: { code_contains: '[hl' }
+              - not: { code_starts_with: 'push hl' }
+              - not: { code_starts_with: 'pop hl' }
+          - all:
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'b' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 4 }, right: { const: 'c' } }
+              - not: { code_contains: '[bc' }
+              - not: { code_starts_with: 'push bc' }
+              - not: { code_starts_with: 'pop bc' }
+          - all:
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 3 }, right: { const: 'd' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, byte_at: 4 }, right: { const: 'e' } }
+              - not: { code_contains: '[de' }
+              - not: { code_starts_with: 'push de' }
+              - not: { code_starts_with: 'pop de' }
+
+  pair_add_step2:
+    any:
+      - all:
+          - any:
+              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'l' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'c' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'e' } }
+          - str_eq:
+              left: { current: code, after_prefix: 'ld ', before_comma: true, trim: true }
+              right: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }
+      - all:
+          - any:
+              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'l' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'c' } }
+              - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'e' } }
+          - str_eq:
+              left: { current: code, after_prefix: 'ld ', before_comma: true, trim: true }
+              right: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }
+      - all:
+          - not:
+              any:
+                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'l' } }
+                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'c' } }
+                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add a, ', byte_at: 0 }, right: { const: 'e' } }
+                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'l' } }
+                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'c' } }
+                - str_eq: { left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }, right: { const: 'e' } }
+
+  pair_add_step3:
+    any:
+      - all:
+          - any:
+              - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'h' } }
+              - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'b' } }
+              - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'd' } }
+          - str_eq:
+              left: { current: code, after_prefix: 'ld a, ', trim: true }
+              right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
+      - not:
+          any:
+            - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'h' } }
+            - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'b' } }
+            - str_eq: { left: { current: code, after_prefix: 'ld a, ', trim: true }, right: { const: 'd' } }
+
+  pair_add_step4:
+    any:
+      - all:
+          - any:
+              - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'h' } }
+              - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'b' } }
+              - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'd' } }
+          - str_eq:
+              left: { current: code, after_prefix: 'adc ', trim: true }
+              right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
+      - not:
+          any:
+            - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'h' } }
+            - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'b' } }
+            - str_eq: { left: { current: code, after_prefix: 'adc ', trim: true }, right: { const: 'd' } }
+
+  pair_add_step5:
+    str_eq:
+      left: { current: code, after_prefix: 'ld ', before_comma: true, trim: true }
+      right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
+
+  pair_add_jump_step4:
+    str_eq:
+      left: { current: code, after_prefix: 'inc ', trim: true }
+      right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
+
+  reg_conditional_ternary_step5:
+    any:
+      - { regex: LDH_R }
+      - all:
+          - any:
+              - { code_eq: 'xor a' }
+              - { code_eq: 'xor a, a' }
+          - any:
+              - str_eq:
+                  left: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true }
+                  right: { const: 'a' }
+              - str_eq:
+                  left: { prev: { idx: 1, field: code }, after_prefix: 'ldh ', before_comma: true, trim: true }
+                  right: { const: 'a' }
+
+  reg_conditional_ternary_step6:
+    any:
+      - str_eq:
+          left: { current: code }
+          right: { prev: { idx: 2, field: code } }
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right: { prev: { idx: 2, field: code }, last_token: true }
+
+  pair_eq_deref_foo_step3:
+    all:
+      - not:
+          str_eq:
+            left: { prev: { idx: 0, field: code }, after_prefix: 'ld a, [', symbol_like: true }
+            right: { const: '' }
+      - str_eq:
+          left: { prev: { idx: 0, field: code }, after_prefix: 'ld a, [', symbol_like: true }
+          right: { current: code, after_prefix: 'ld a, [', symbol_like: true }
+
 patterns:
   py_redundant_arguments:
     name: Redundant arguments
@@ -303,8 +473,8 @@ patterns:
               prev: { idx: 0, field: code }
               after_comma: true
               trim: true
-      - when: { builtin: reg_conditional_ternary_step5 }
-      - when: { builtin: reg_conditional_ternary_step6 }
+      - when: { cond: reg_conditional_ternary_step5 }
+      - when: { cond: reg_conditional_ternary_step6 }
 
   py_a_and_x_eq_x:
     name: a & X == X
@@ -362,19 +532,19 @@ patterns:
       - when:
           all:
             - { regex: LD_LCE_A }
-            - { builtin: pair_add_step2 }
+            - { cond: pair_add_step2 }
       - when:
           all:
             - { regex: LD_A_HBD_OR_0 }
-            - { builtin: pair_add_step3 }
+            - { cond: pair_add_step3 }
       - when:
           all:
             - { regex: ADC_HBD_OR_0 }
-            - { builtin: pair_add_step4 }
+            - { cond: pair_add_step4 }
       - when:
           all:
             - { regex: LD_HBD_A }
-            - { builtin: pair_add_step5 }
+            - { cond: pair_add_step5 }
 
   py_pair_add_a_or_n_jump:
     name: hl|bc|de += a|N (jump)
@@ -383,12 +553,12 @@ patterns:
       - when:
           all:
             - { regex: LD_LCE_A }
-            - { builtin: pair_add_step2 }
+            - { cond: pair_add_step2 }
       - when: { regex: JUMP_NC }
       - when:
           all:
             - { code_starts_with: 'inc ' }
-            - { builtin: pair_add_jump_step4 }
+            - { cond: pair_add_jump_step4 }
       - when:
           str_eq:
             left: { current: code, strip_trailing_colon: true }
@@ -530,10 +700,10 @@ patterns:
                   before_comma: true
                   trim: true
                   pair_reg: true
-      - when: { builtin: pair_eq_a_mul_16_add }
-      - when: { builtin: pair_eq_a_mul_16_add }
-      - when: { builtin: pair_eq_a_mul_16_add }
-      - when: { builtin: pair_eq_a_mul_16_add }
+      - when: { cond: pair_eq_a_mul_16_add }
+      - when: { cond: pair_eq_a_mul_16_add }
+      - when: { cond: pair_eq_a_mul_16_add }
+      - when: { cond: pair_eq_a_mul_16_add }
 
   py_pair_eq_a_mul_16_rept:
     name: hl|bc|de = a * 16 (rept)
@@ -564,7 +734,7 @@ patterns:
                   trim: true
                   pair_reg: true
       - when: { regex: REPT_4_CI }
-      - when: { builtin: pair_eq_a_mul_16_add }
+      - when: { cond: pair_eq_a_mul_16_add }
       - when: { regex: ENDR_CI }
 
   py_hl_mul_2:
@@ -581,7 +751,7 @@ patterns:
       - when:
           all:
             - { regex: LD_A_MEM_NOT_HBD }
-            - { builtin: pair_eq_deref_foo_step3 }
+            - { cond: pair_eq_deref_foo_step3 }
       - when:
           all:
             - { regex: LD_LH_A }
@@ -1047,7 +1217,7 @@ patterns:
     steps:
       - when: { regex: LD_PAIR_IMM }
       - rewind: 1
-        when: { builtin: pair_dotdot_step2 }
+        when: { cond: pair_dotdot_step2 }
       - rewind: 1
         when:
           any:
@@ -1081,10 +1251,10 @@ patterns:
     steps:
       - when: { regex: LD_PAIR_IMM }
       - rewind: 1
-        when: { builtin: pair_dotdot_step2 }
+        when: { cond: pair_dotdot_step2 }
       - when: { regex: LD_PAIR_IMM }
       - rewind: 1
-        when: { builtin: pair_three_step3 }
+        when: { cond: pair_three_step3 }
 
   py_dec_a_then_addntimes:
     name: dec a, then AddNTimes
