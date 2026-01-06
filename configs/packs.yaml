@@ -88,6 +88,11 @@ regexes:
   ADD_PAIR_THREE_STEP: '^add (?:hl|bc|de), (?!hl|bc|de)'
 
 conditions:
+  is_ld_or_ldh:
+    any:
+      - { code_starts_with: 'ld ' }
+      - { code_starts_with: 'ldh ' }
+
   label_definition_line:
     all:
       - { text_regex: LABEL_DEFINITION_TEXT_START }
@@ -1033,16 +1038,12 @@ patterns:
     steps:
       - when:
           all:
-            - any:
-                - { code_starts_with: 'ld ' }
-                - { code_starts_with: 'ldh ' }
+            - { cond: is_ld_or_ldh }
             - { code_contains: ',' }
             - not: { cond: volatile_operand }
       - when:
           all:
-            - any:
-                - { code_starts_with: 'ld ' }
-                - { code_starts_with: 'ldh ' }
+            - { cond: is_ld_or_ldh }
             - { code_contains: ',' }
             - not:
                 any:
@@ -1061,16 +1062,12 @@ patterns:
     steps:
       - when:
           all:
-            - any:
-                - { code_starts_with: 'ld ' }
-                - { code_starts_with: 'ldh ' }
+            - { cond: is_ld_or_ldh }
             - { code_contains: ',' }
             - not: { cond: volatile_operand }
       - when:
           all:
-            - any:
-                - { code_starts_with: 'ld ' }
-                - { code_starts_with: 'ldh ' }
+            - { cond: is_ld_or_ldh }
             - { code_contains: ',' }
             - str_eq:
                 left: { current: context }
@@ -1103,9 +1100,7 @@ patterns:
     steps:
       - when:
           all:
-            - any:
-                - { code_starts_with: 'ld ' }
-                - { code_starts_with: 'ldh ' }
+            - { cond: is_ld_or_ldh }
             - { code_contains: ',' }
             - not: { regex: LOAD_SRC_IS_SINGLE_REG }
             - not: { cond: volatile_operand }
