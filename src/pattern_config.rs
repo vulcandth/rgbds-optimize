@@ -32,8 +32,6 @@ pub enum ConfigError {
     UnknownCondition(String),
     ConditionCycle(String),
     InvalidStringExpr(String),
-    UnknownBuiltin(String),
-    InvalidBuiltin(String),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -54,8 +52,6 @@ impl std::fmt::Display for ConfigError {
                 write!(f, "condition '{name}' forms a cycle")
             }
             ConfigError::InvalidStringExpr(msg) => write!(f, "invalid string expr: {msg}"),
-            ConfigError::UnknownBuiltin(name) => write!(f, "unknown builtin '{name}'"),
-            ConfigError::InvalidBuiltin(msg) => write!(f, "invalid builtin: {msg}"),
         }
     }
 }
@@ -127,7 +123,6 @@ enum ConditionYaml {
     Not { not: Box<ConditionYaml> },
     Instruction { instruction: InstructionYaml },
     IncDecSameTargetAsPrevLd { inc_dec_same_target_as_prev_ld: usize },
-    Builtin { builtin: BuiltinYaml },
 }
 
 #[derive(Clone, Deserialize)]
@@ -261,17 +256,6 @@ fn parse_string_field(s: &str) -> Result<crate::StringField, ConfigError> {
             "unknown field '{other}'"
         ))),
     }
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(untagged)]
-enum BuiltinYaml {
-    Name(String),
-    Call {
-        name: String,
-        #[serde(default)]
-        jump_idx: Option<usize>,
-    },
 }
 
 #[derive(Clone, Deserialize)]
@@ -418,14 +402,6 @@ impl<'a> ConditionCompiler<'a> {
             } => StepCondition::IncDecSameTargetAsPrevLd {
                 prev_step: inc_dec_same_target_as_prev_ld,
             },
-
-            ConditionYaml::Builtin { builtin } => {
-                let (name, jump_idx) = match builtin {
-                    BuiltinYaml::Name(name) => (name, None),
-                    BuiltinYaml::Call { name, jump_idx } => (name, jump_idx),
-                };
-                StepCondition::Builtin(crate::BuiltinCondition::from_yaml(&name, jump_idx)?)
-            }
         })
     }
 }
