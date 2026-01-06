@@ -945,7 +945,7 @@ mod tests {
         };
 
         let cond = StepCondition::StrEq { left, right };
-        assert!(cond.matches(&current, &[prev.clone()]));
+        assert!(cond.matches(&current, std::slice::from_ref(&prev)));
 
         let symbol = StringExpr {
             base: StringBase::Current(StringField::Code),
