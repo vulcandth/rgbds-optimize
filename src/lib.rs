@@ -438,6 +438,7 @@ pub enum StringTransform {
     LastChar,
     LastToken,
     StripTrailingColon,
+    SymbolLike,
     Trim,
 }
 
@@ -513,6 +514,9 @@ impl StringExpr {
                 }
                 StringTransform::StripTrailingColon => {
                     s = strip_trailing_colon(&s).to_string();
+                }
+                StringTransform::SymbolLike => {
+                    s = extract_symbol_like(&s).to_string();
                 }
                 StringTransform::Trim => {
                     s = s.trim().to_string();
