@@ -110,8 +110,10 @@ struct StepYaml {
 #[serde(untagged)]
 enum ConditionYaml {
     Regex { regex: String },
+    RegexIn { regex_in: Vec<String> },
     TextRegex { text_regex: String },
     StrEq { str_eq: Box<StrEqYaml> },
+    StrEqIn { str_eq_in: Box<StrEqInYaml> },
     CodeEq { code_eq: String },
     CodeIn { code_in: Vec<String> },
     CodeNe { code_ne: String },
@@ -133,6 +135,12 @@ enum ConditionYaml {
 struct StrEqYaml {
     left: StringExprYaml,
     right: StringExprYaml,
+}
+
+#[derive(Clone, Deserialize)]
+struct StrEqInYaml {
+    left: StringExprYaml,
+    rights: Vec<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -351,6 +359,17 @@ impl<'a> ConditionCompiler<'a> {
                 StepCondition::Regex(re)
             }
 
+            ConditionYaml::RegexIn { regex_in } => {
+                let mut out = Vec::with_capacity(regex_in.len());
+                for name in regex_in {
+                    let Some(re) = self.regexes.get(&name).cloned() else {
+                        return Err(ConfigError::UnknownRegex(name));
+                    };
+                    out.push(StepCondition::Regex(re));
+                }
+                StepCondition::Any(out)
+            }
+
             ConditionYaml::TextRegex { text_regex } => {
                 let Some(re) = self.regexes.get(&text_regex).cloned() else {
                     return Err(ConfigError::UnknownRegex(text_regex));
@@ -364,6 +383,23 @@ impl<'a> ConditionCompiler<'a> {
                     left: left.into_runtime()?,
                     right: right.into_runtime()?,
                 }
+            }
+
+            ConditionYaml::StrEqIn { str_eq_in } => {
+                let StrEqInYaml { left, rights } = *str_eq_in;
+                let left = left.into_runtime()?;
+                StepCondition::Any(
+                    rights
+                        .into_iter()
+                        .map(|right| StepCondition::StrEq {
+                            left: left.clone(),
+                            right: crate::StringExpr {
+                                base: crate::StringBase::Const(right),
+                                transforms: Vec::new(),
+                            },
+                        })
+                        .collect::<Vec<_>>(),
+                )
             }
 
             ConditionYaml::CodeEq { code_eq } => StepCondition::CodeEq(code_eq),
@@ -532,6 +568,7 @@ mod tests {
         let yaml = r#"
 regexes:
     NO_OP_LD: '^ld ([abcdehl]), \1$'
+    CALL_OR_RET: '^(?:call|ret)'
 conditions:
     op_is_one_of:
         code_in: ['xor a', 'xor a, a']
@@ -541,6 +578,12 @@ conditions:
         code_ends_with_any: [', a', ', hl']
     contains_any:
         code_contains_any: ['[hl]', '[hli]']
+    regex_one_of:
+        regex_in: [NO_OP_LD, CALL_OR_RET]
+    str_eq_one_of:
+        str_eq_in:
+            left: { current: code, byte_at: 0 }
+            rights: ['l', 'c']
     not_halt:
         not:
             code_eq: halt
@@ -553,6 +596,8 @@ patterns:
                     all:
                         - { cond: not_halt }
                         - { regex: NO_OP_LD }
+                        - { cond: regex_one_of }
+                        - { cond: str_eq_one_of }
 
 packs:
   core:
