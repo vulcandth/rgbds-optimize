@@ -119,7 +119,7 @@ to enable those when needed (example: `ld ([abcdehl]), \1`).
 
 The community goal is best met by separating “engine” from “pattern definitions” and shipping multiple optional packs.
 
-- [x] Design a config format for patterns (suggested: TOML or YAML):
+- [x] Design a config format for patterns (YAML):
   - Pattern metadata: name, pack, enabled-by-default, description
   - A list of steps/conditions (N-step pattern)
   - Condition types for a minimal-but-useful DSL:

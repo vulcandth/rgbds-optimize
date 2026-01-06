@@ -110,8 +110,10 @@ fn python_and_rust_outputs_match_on_fixtures() {
     let rs = {
         let mut cmd = Command::new(optimize_bin);
         cmd.current_dir(&repo_root)
+            .arg("--config")
+            .arg("configs/packs.yaml")
             .arg("--pack")
-            .arg("configs/pret.toml")
+            .arg("pret")
             .args(&rel_files);
         run_checked(cmd)
     };

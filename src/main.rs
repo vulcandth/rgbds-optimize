@@ -11,7 +11,8 @@ use rgbds_optimize as optimize_core;
 
 #[derive(Debug)]
 struct Args {
-    pack_path: PathBuf,
+    config_path: PathBuf,
+    pack_name: String,
     input_paths: Vec<PathBuf>,
     file_list_path: Option<PathBuf>,
     #[cfg(all(feature = "pprof", unix))]
@@ -63,23 +64,23 @@ fn main() {
         .as_ref()
         .map(|_| pprof::ProfilerGuard::new(args.pprof_frequency_hz).unwrap());
 
-    let pack_contents = match fs::read_to_string(&args.pack_path) {
+    let config_contents = match fs::read_to_string(&args.config_path) {
         Ok(s) => s,
         Err(err) => {
             eprintln!(
-                "Failed to read pack config {}: {}",
-                format_path_for_output(&args.pack_path),
+                "Failed to read config {}: {}",
+                format_path_for_output(&args.config_path),
                 err
             );
             std::process::exit(2);
         }
     };
-    let pack = match optimize_core::load_pattern_pack_toml(&pack_contents) {
+    let pack = match optimize_core::load_pattern_pack_yaml(&config_contents, &args.pack_name) {
         Ok(p) => p,
         Err(err) => {
             eprintln!(
-                "Invalid pack config {}: {}",
-                format_path_for_output(&args.pack_path),
+                "Invalid config {}: {}",
+                format_path_for_output(&args.config_path),
                 err
             );
             std::process::exit(2);
@@ -195,7 +196,8 @@ fn gather_asm_files_sorted(root: &Path) -> Vec<PathBuf> {
 }
 
 fn parse_args(args: Vec<OsString>) -> Args {
-    let mut pack_path: PathBuf = PathBuf::from("configs/rgbds.toml");
+    let mut config_path: PathBuf = PathBuf::from("configs/packs.yaml");
+    let mut pack_name: String = String::from("rgbds");
     let mut inputs: Vec<PathBuf> = Vec::new();
     let mut file_list_path: Option<PathBuf> = None;
     let mut pprof_out: Option<PathBuf> = None;
@@ -205,10 +207,18 @@ fn parse_args(args: Vec<OsString>) -> Args {
 
     let mut i = 0usize;
     while i < args.len() {
-        if args[i] == "--pack"
+        if args[i] == "--config"
             && let Some(v) = args.get(i + 1)
         {
-            pack_path = PathBuf::from(v);
+            config_path = PathBuf::from(v);
+            i += 2;
+            continue;
+        }
+
+        if args[i] == "--pack"
+            && let Some(v) = args.get(i + 1).and_then(|v| v.to_str())
+        {
+            pack_name = v.to_string();
             i += 2;
             continue;
         }
@@ -244,7 +254,8 @@ fn parse_args(args: Vec<OsString>) -> Args {
     }
 
     Args {
-        pack_path,
+        config_path,
+        pack_name,
         input_paths: inputs,
         file_list_path,
         pprof_out,
