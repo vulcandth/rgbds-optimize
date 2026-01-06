@@ -274,107 +274,99 @@ patterns:
   py_redundant_arguments:
     name: Redundant arguments
     steps:
-      - when: { regex: REDUNDANT_ARGUMENTS }
+      - regex: REDUNDANT_ARGUMENTS
 
   py_nops:
     name: nops
     steps:
-      - when: { code_ne: halt }
-      - when: { code_eq: nop }
+      - code_ne: halt
+      - code_eq: nop
 
   py_no_op_ld:
     name: No-op ld
     steps:
-      - when: { regex: NO_OP_LD_PY }
+      - regex: NO_OP_LD_PY
 
   py_no_op_add_sub:
     name: No-op add|sub
     steps:
-      - when: { regex: NO_OP_ADD_SUB }
+      - regex: NO_OP_ADD_SUB
 
   py_inefficient_hram_load:
     name: Inefficient HRAM load
     steps:
-      - when:
-          all:
-            - { regex: INEFFICIENT_HRAM_LOAD }
-            - not: { cond: is_bank_reg_symbol }
+      - all:
+          - { regex: INEFFICIENT_HRAM_LOAD }
+          - not: is_bank_reg_symbol
 
   py_inefficient_hram_store:
     name: Inefficient HRAM store
     steps:
-      - when:
-          all:
-            - { regex: INEFFICIENT_HRAM_STORE }
-            - { code_ends_with: ', a' }
-            - not: { cond: is_bank_reg_symbol }
+      - all:
+          - { regex: INEFFICIENT_HRAM_STORE }
+          - { code_ends_with: ', a' }
+          - not: is_bank_reg_symbol
 
   py_a_eq_0:
     name: a = 0
     steps:
-      - when: { regex: A_EQ_0 }
+      - regex: A_EQ_0
 
   py_a_inc_dec:
     name: a++|a--
     steps:
-      - when: { regex: A_INC_DEC }
+      - regex: A_INC_DEC
 
   py_a_times_2:
     name: a *= 2
     steps:
-      - when: { code_eq: 'sla a' }
+      - code_eq: 'sla a'
 
   py_a_not:
     name: a = ~a
     steps:
-      - when: { regex: A_NOT }
+      - regex: A_NOT
 
   py_a_eq_n_minus_a:
     name: a = N - a
     steps:
-      - when: { regex: LD_R_A }
-      - when: { regex: LD_A_IMM }
-      - when:
-          all:
-            - { regex: SUB_R }
-            - str_eq:
-                left:
-                  current: code
-                  after_prefix: 'sub '
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
+      - regex: LD_R_A
+      - regex: LD_A_IMM
+      - all:
+          - { regex: SUB_R }
+          - str_eq:
+              left:
+                current: code
+                after_prefix: 'sub '
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
 
   py_a_eq_carry_pq:
     name: 'a = carry ? P : Q'
     steps:
-      - when: { regex: LD_A_IMM }
-      - when: { regex: JUMP_NC_OR_C }
-      - when:
-          any:
-            - { regex: LD_A_IMM }
-            - { code_eq: 'xor a' }
-            - { code_eq: 'inc a' }
-            - { code_eq: 'dec a' }
-      - when:
-          str_eq:
-            left: { current: code, strip_trailing_colon: true }
-            right:
-              prev: { idx: 1, field: code }
-              after_comma: true
-              trim: true
+      - regex: LD_A_IMM
+      - regex: JUMP_NC_OR_C
+      - any:
+          - { regex: LD_A_IMM }
+          - { code_eq: 'xor a' }
+          - { code_eq: 'inc a' }
+          - { code_eq: 'dec a' }
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right:
+            prev: { idx: 1, field: code }
+            after_comma: true
+            trim: true
 
   py_a_inc_dec_if_carry:
     name: a++|a-- if carry
     steps:
-      - when: { regex: JUMP_NC }
-      - when:
-          any:
-            - { code_eq: 'inc a' }
-            - { code_eq: 'dec a' }
+      - regex: JUMP_NC
+      - code_in: ['inc a', 'dec a']
       - rewind: 1
         when:
           str_eq:
@@ -387,11 +379,8 @@ patterns:
   py_a_inc_dec_if_not_carry:
     name: a++|a-- if not carry
     steps:
-      - when: { regex: JUMP_C }
-      - when:
-          any:
-            - { code_eq: 'inc a' }
-            - { code_eq: 'dec a' }
+      - regex: JUMP_C
+      - code_in: ['inc a', 'dec a']
       - rewind: 1
         when:
           str_eq:
@@ -404,102 +393,310 @@ patterns:
   py_a_shift_right_3:
     name: a = a >> 3
     steps:
-      - when: { regex: SRL_A }
-      - when: { regex: SRL_A }
-      - when: { regex: SRL_A }
+      - regex: SRL_A
+      - regex: SRL_A
+      - regex: SRL_A
 
   py_a_eq_x_plusminus_carry:
     name: a = X +/- carry
     steps:
-      - when: { regex: LD_DST_A }
-      - when:
-          all:
-            - { code_starts_with: 'ld a,' }
-            - any:
-                - not: { code_starts_with: 'ld a, [' }
-                - { code_eq: 'ld a, [hl]' }
-      - when: { regex: ADC_SBC_0 }
+      - regex: LD_DST_A
+      - all:
+          - { code_starts_with: 'ld a,' }
+          - any:
+              - not: { code_starts_with: 'ld a, [' }
+              - { code_eq: 'ld a, [hl]' }
+      - regex: ADC_SBC_0
 
   py_a_eq_carry_plusminus_x:
     name: a = carry +/- X
     steps:
-      - when: { regex: LD_DST_A }
-      - when: { regex: LD_A_0 }
-      - when:
-          any:
-            - all:
-                - { code_starts_with: 'adc ' }
-                - any:
-                    - not: { code_starts_with: 'adc [' }
-                    - { code_eq: 'adc [hl]' }
-            - all:
-                - { code_starts_with: 'sbc ' }
-                - any:
-                    - not: { code_starts_with: 'sbc [' }
-                    - { code_eq: 'sbc [hl]' }
+      - regex: LD_DST_A
+      - regex: LD_A_0
+      - any:
+          - all:
+              - code_starts_with: 'adc '
+              - any:
+                  - not: { code_starts_with: 'adc [' }
+                  - code_eq: 'adc [hl]'
+          - all:
+              - code_starts_with: 'sbc '
+              - any:
+                  - not: { code_starts_with: 'sbc [' }
+                  - code_eq: 'sbc [hl]'
 
   py_reg_conditional_ternary:
     name: 'a|b|c|d|e|h|l = z|nz|c|nc ? P : Q'
     steps:
-      - when: { regex: JUMP_NZ_OR_ZC }
-      - when: { regex: LDH_R }
-      - when:
-          all:
-            - { regex: JR_JP_JMP_ANY }
-            - not: { code_contains: ',' }
-            - { code_ne: 'jp hl' }
-      - when:
-          str_eq:
-            left: { current: code, strip_trailing_colon: true }
-            right:
-              prev: { idx: 0, field: code }
-              after_comma: true
-              trim: true
-      - when: { cond: reg_conditional_ternary_step5 }
-      - when: { cond: reg_conditional_ternary_step6 }
+      - regex: JUMP_NZ_OR_ZC
+      - regex: LDH_R
+      - all:
+          - { regex: JR_JP_JMP_ANY }
+          - not: { code_contains: ',' }
+          - { code_ne: 'jp hl' }
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right:
+            prev: { idx: 0, field: code }
+            after_comma: true
+            trim: true
+      - reg_conditional_ternary_step5
+      - reg_conditional_ternary_step6
 
   py_a_and_x_eq_x:
     name: a & X == X
     steps:
-      - when: { regex: AND_IMM }
-      - when:
-          all:
-            - { regex: CP_IMM }
-            - str_eq:
-                left:
-                  current: code
-                  after_prefix: 'cp '
-                right:
-                  prev: { idx: 0, field: code }
-                  after_prefix: 'and '
+      - regex: AND_IMM
+      - all:
+          - { regex: CP_IMM }
+          - str_eq:
+              left:
+                current: code
+                after_prefix: 'cp '
+              right:
+                prev: { idx: 0, field: code }
+                after_prefix: 'and '
 
   py_a_mask_or:
     name: a = (a & MASK) | (b|c|d|e|h|l & ~MASK)
     steps:
-      - when: { regex: AND_IMM }
-      - when: { regex: LD_RH_A }
-      - when:
-          all:
-            - { regex: LD_A_RH }
-            - not:
-                str_eq:
-                  left:
-                    current: code
-                    after_comma: true
-                    trim: true
-                  right:
-                    prev: { idx: 1, field: code }
-                    after_prefix: 'ld '
-                    before_comma: true
-                    trim: true
-      - when: { regex: AND_IMM }
-      - when:
-          all:
-            - { regex: OR_R }
-            - str_eq:
+      - regex: AND_IMM
+      - regex: LD_RH_A
+      - all:
+          - { regex: LD_A_RH }
+          - not:
+              str_eq:
                 left:
                   current: code
-                  last_token: true
+                  after_comma: true
+                  trim: true
+                right:
+                  prev: { idx: 1, field: code }
+                  after_prefix: 'ld '
+                  before_comma: true
+                  trim: true
+      - regex: AND_IMM
+      - all:
+          - { regex: OR_R }
+          - str_eq:
+              left:
+                current: code
+                last_token: true
+                trim: true
+              right:
+                prev: { idx: 1, field: code }
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+
+  py_pair_add_a_or_n:
+    name: hl|bc|de += a|N
+    steps:
+      - regex: ADD_A_LCE_OR_IMM
+      - all:
+          - regex: LD_LCE_A
+          - pair_add_step2
+      - all:
+          - regex: LD_A_HBD_OR_0
+          - pair_add_step3
+      - all:
+          - regex: ADC_HBD_OR_0
+          - pair_add_step4
+      - all:
+          - regex: LD_HBD_A
+          - pair_add_step5
+
+  py_pair_add_a_or_n_jump:
+    name: hl|bc|de += a|N (jump)
+    steps:
+      - regex: ADD_A_LCE_OR_IMM
+      - all:
+          - regex: LD_LCE_A
+          - pair_add_step2
+      - regex: JUMP_NC
+      - all:
+          - code_starts_with: 'inc '
+          - pair_add_jump_step4
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right:
+            prev: { idx: 2, field: code }
+            after_comma: true
+            trim: true
+
+  py_pair_eq_foo_plus_a:
+    name: hl|bc|de = Foo + a
+    steps:
+      - regex: LD_PAIR_IMM
+      - all:
+          - regex: ADD_LCE
+          - str_eq:
+              left: { current: code, last_char: true }
+              right: { prev: { idx: 0, field: code }, byte_at: 4 }
+      - all:
+          - regex: LD_LCE_A
+          - str_eq:
+              left: { current: code, byte_at: 3 }
+              right: { prev: { idx: 0, field: code }, byte_at: 4 }
+      - all:
+          - regex: ADC_HBD
+          - str_eq:
+              left: { current: code, last_char: true }
+              right: { prev: { idx: 0, field: code }, byte_at: 3 }
+      - all:
+          - regex: SUB_LCE
+          - str_eq:
+              left: { current: code, last_char: true }
+              right: { prev: { idx: 0, field: code }, byte_at: 4 }
+      - all:
+          - regex: LD_HBD_A
+          - str_eq:
+              left: { current: code, byte_at: 3 }
+              right: { prev: { idx: 0, field: code }, byte_at: 3 }
+
+  py_reg_plus_carry:
+    name: b|c|d|e|h|l += carry
+    steps:
+      - regex: LD_A_BCDEHL_OR_0
+      - regex: ADC_BCDEHL_OR_0
+      - all:
+          - { regex: LD_RH_A }
+          - any:
+              - str_eq:
+                  left:
+                    current: code
+                    byte_at: 3
+                  right:
+                    prev: { idx: 0, field: code }
+                    byte_at: 6
+              - str_eq:
+                  left:
+                    current: code
+                    byte_at: 3
+                  right:
+                    prev: { idx: 1, field: code }
+                    byte_at: 4
+          - any:
+              - str_eq:
+                  left:
+                    prev: { idx: 0, field: code }
+                    last_char: true
+                  right: { const: '0' }
+              - str_eq:
+                  left:
+                    prev: { idx: 1, field: code }
+                    last_char: true
+                  right: { const: '0' }
+
+  py_reg_minus_carry:
+    name: b|c|d|e|h|l -= carry
+    steps:
+      - regex: LD_A_BCDEHL_OR_0
+      - regex: SBC_BCDEHL_OR_0
+      - all:
+          - { regex: LD_RH_A }
+          - any:
+              - str_eq:
+                  left:
+                    current: code
+                    byte_at: 3
+                  right:
+                    prev: { idx: 0, field: code }
+                    byte_at: 6
+              - str_eq:
+                  left:
+                    current: code
+                    byte_at: 3
+                  right:
+                    prev: { idx: 1, field: code }
+                    byte_at: 4
+          - any:
+              - str_eq:
+                  left:
+                    prev: { idx: 0, field: code }
+                    last_char: true
+                  right: { const: '0' }
+              - str_eq:
+                  left:
+                    prev: { idx: 1, field: code }
+                    last_char: true
+                  right: { const: '0' }
+
+  py_pair_eq_a_mul_16:
+    name: hl|bc|de = a * 16
+    steps:
+      - regex_in: [LD_LCE_A, LD_HBD_0]
+      - all:
+          - regex_in: [LD_LCE_A, LD_HBD_0]
+          - not:
+              str_eq:
+                left: { current: code }
+                right: { prev: { idx: 0, field: code } }
+          - str_eq:
+              left:
+                current: code
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+                pair_reg: true
+      - mul16_add_pair_matches_prev_ld
+      - mul16_add_pair_matches_prev_ld
+      - mul16_add_pair_matches_prev_ld
+      - mul16_add_pair_matches_prev_ld
+
+  py_pair_eq_a_mul_16_rept:
+    name: hl|bc|de = a * 16 (rept)
+    steps:
+      - regex_in: [LD_LCE_A, LD_HBD_0]
+      - all:
+          - regex_in: [LD_LCE_A, LD_HBD_0]
+          - not:
+              str_eq:
+                left: { current: code }
+                right: { prev: { idx: 0, field: code } }
+          - str_eq:
+              left:
+                current: code
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+                pair_reg: true
+      - regex: REPT_4_CI
+      - mul16_add_pair_matches_prev_ld
+      - regex: ENDR_CI
+
+  py_hl_mul_2:
+    name: hl *= 2
+    steps:
+      - code_eq: 'sla l'
+      - code_eq: 'rl h'
+
+  py_pair_eq_deref_foo:
+    name: hl = *Foo
+    steps:
+      - regex: LD_A_MEM_NOT_HBD
+      - regex: LD_LH_A
+      - all:
+          - { regex: LD_A_MEM_NOT_HBD }
+          - pair_eq_deref_foo_step3
+      - all:
+          - { regex: LD_LH_A }
+          - not:
+              str_eq:
+                left:
+                  current: code
+                  after_prefix: 'ld '
+                  before_comma: true
                   trim: true
                 right:
                   prev: { idx: 1, field: code }
@@ -507,654 +704,379 @@ patterns:
                   before_comma: true
                   trim: true
 
-  py_pair_add_a_or_n:
-    name: hl|bc|de += a|N
-    steps:
-      - when: { regex: ADD_A_LCE_OR_IMM }
-      - when:
-          all:
-            - { regex: LD_LCE_A }
-            - { cond: pair_add_step2 }
-      - when:
-          all:
-            - { regex: LD_A_HBD_OR_0 }
-            - { cond: pair_add_step3 }
-      - when:
-          all:
-            - { regex: ADC_HBD_OR_0 }
-            - { cond: pair_add_step4 }
-      - when:
-          all:
-            - { regex: LD_HBD_A }
-            - { cond: pair_add_step5 }
-
-  py_pair_add_a_or_n_jump:
-    name: hl|bc|de += a|N (jump)
-    steps:
-      - when: { regex: ADD_A_LCE_OR_IMM }
-      - when:
-          all:
-            - { regex: LD_LCE_A }
-            - { cond: pair_add_step2 }
-      - when: { regex: JUMP_NC }
-      - when:
-          all:
-            - { code_starts_with: 'inc ' }
-            - { cond: pair_add_jump_step4 }
-      - when:
-          str_eq:
-            left: { current: code, strip_trailing_colon: true }
-            right:
-              prev: { idx: 2, field: code }
-              after_comma: true
-              trim: true
-
-  py_pair_eq_foo_plus_a:
-    name: hl|bc|de = Foo + a
-    steps:
-      - when: { regex: LD_PAIR_IMM }
-      - when:
-          all:
-            - { regex: ADD_LCE }
-            - str_eq:
-                left: { current: code, last_char: true }
-                right: { prev: { idx: 0, field: code }, byte_at: 4 }
-      - when:
-          all:
-            - { regex: LD_LCE_A }
-            - str_eq:
-                left: { current: code, byte_at: 3 }
-                right: { prev: { idx: 0, field: code }, byte_at: 4 }
-      - when:
-          all:
-            - { regex: ADC_HBD }
-            - str_eq:
-                left: { current: code, last_char: true }
-                right: { prev: { idx: 0, field: code }, byte_at: 3 }
-      - when:
-          all:
-            - { regex: SUB_LCE }
-            - str_eq:
-                left: { current: code, last_char: true }
-                right: { prev: { idx: 0, field: code }, byte_at: 4 }
-      - when:
-          all:
-            - { regex: LD_HBD_A }
-            - str_eq:
-                left: { current: code, byte_at: 3 }
-                right: { prev: { idx: 0, field: code }, byte_at: 3 }
-
-  py_reg_plus_carry:
-    name: b|c|d|e|h|l += carry
-    steps:
-      - when: { regex: LD_A_BCDEHL_OR_0 }
-      - when: { regex: ADC_BCDEHL_OR_0 }
-      - when:
-          all:
-            - { regex: LD_RH_A }
-            - any:
-                - str_eq:
-                    left:
-                      current: code
-                      byte_at: 3
-                    right:
-                      prev: { idx: 0, field: code }
-                      byte_at: 6
-                - str_eq:
-                    left:
-                      current: code
-                      byte_at: 3
-                    right:
-                      prev: { idx: 1, field: code }
-                      byte_at: 4
-            - any:
-                - str_eq:
-                    left:
-                      prev: { idx: 0, field: code }
-                      last_char: true
-                    right: { const: '0' }
-                - str_eq:
-                    left:
-                      prev: { idx: 1, field: code }
-                      last_char: true
-                    right: { const: '0' }
-
-  py_reg_minus_carry:
-    name: b|c|d|e|h|l -= carry
-    steps:
-      - when: { regex: LD_A_BCDEHL_OR_0 }
-      - when: { regex: SBC_BCDEHL_OR_0 }
-      - when:
-          all:
-            - { regex: LD_RH_A }
-            - any:
-                - str_eq:
-                    left:
-                      current: code
-                      byte_at: 3
-                    right:
-                      prev: { idx: 0, field: code }
-                      byte_at: 6
-                - str_eq:
-                    left:
-                      current: code
-                      byte_at: 3
-                    right:
-                      prev: { idx: 1, field: code }
-                      byte_at: 4
-            - any:
-                - str_eq:
-                    left:
-                      prev: { idx: 0, field: code }
-                      last_char: true
-                    right: { const: '0' }
-                - str_eq:
-                    left:
-                      prev: { idx: 1, field: code }
-                      last_char: true
-                    right: { const: '0' }
-
-  py_pair_eq_a_mul_16:
-    name: hl|bc|de = a * 16
-    steps:
-      - when: { regex_in: [LD_LCE_A, LD_HBD_0] }
-      - when:
-          all:
-            - regex_in: [LD_LCE_A, LD_HBD_0]
-            - not:
-                str_eq:
-                  left: { current: code }
-                  right: { prev: { idx: 0, field: code } }
-            - str_eq:
-                left:
-                  current: code
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
-                  pair_reg: true
-      - when: { cond: mul16_add_pair_matches_prev_ld }
-      - when: { cond: mul16_add_pair_matches_prev_ld }
-      - when: { cond: mul16_add_pair_matches_prev_ld }
-      - when: { cond: mul16_add_pair_matches_prev_ld }
-
-  py_pair_eq_a_mul_16_rept:
-    name: hl|bc|de = a * 16 (rept)
-    steps:
-      - when: { regex_in: [LD_LCE_A, LD_HBD_0] }
-      - when:
-          all:
-            - regex_in: [LD_LCE_A, LD_HBD_0]
-            - not:
-                str_eq:
-                  left: { current: code }
-                  right: { prev: { idx: 0, field: code } }
-            - str_eq:
-                left:
-                  current: code
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
-                  pair_reg: true
-      - when: { regex: REPT_4_CI }
-      - when: { cond: mul16_add_pair_matches_prev_ld }
-      - when: { regex: ENDR_CI }
-
-  py_hl_mul_2:
-    name: hl *= 2
-    steps:
-      - when: { code_eq: 'sla l' }
-      - when: { code_eq: 'rl h' }
-
-  py_pair_eq_deref_foo:
-    name: hl = *Foo
-    steps:
-      - when: { regex: LD_A_MEM_NOT_HBD }
-      - when: { regex: LD_LH_A }
-      - when:
-          all:
-            - { regex: LD_A_MEM_NOT_HBD }
-            - { cond: pair_eq_deref_foo_step3 }
-      - when:
-          all:
-            - { regex: LD_LH_A }
-            - not:
-                str_eq:
-                  left:
-                    current: code
-                    after_prefix: 'ld '
-                    before_comma: true
-                    trim: true
-                  right:
-                    prev: { idx: 1, field: code }
-                    after_prefix: 'ld '
-                    before_comma: true
-                    trim: true
-
   py_pair_load_pq:
     name: h,l|b,c|d,e = P,Q
     steps:
-      - when: { regex: LD_R_IMM }
-      - when:
-          all:
-            - { regex: LD_R_IMM }
-            - str_eq:
-                left: { current: context }
-                right: { prev: { idx: 0, field: context } }
-            - str_eq:
-                left:
-                  current: code
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
-                  pair_reg: true
+      - regex: LD_R_IMM
+      - all:
+          - { regex: LD_R_IMM }
+          - str_eq:
+              left: { current: context }
+              right: { prev: { idx: 0, field: context } }
+          - str_eq:
+              left:
+                current: code
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+                pair_reg: true
 
   py_deref_hl_eq_n:
     name: '*hl = N'
     steps:
-      - when: { regex: LD_A_IMM }
-      - when: { code_eq: 'ld [hl], a' }
+      - regex: LD_A_IMM
+      - code_eq: 'ld [hl], a'
 
   py_deref_hl_inc_dec:
     name: '*hl++|*hl--'
     steps:
-      - when: { code_eq: 'ld a, [hl]' }
-      - when:
-          any:
-            - { code_eq: 'inc a' }
-            - { code_eq: 'dec a' }
+      - code_eq: 'ld a, [hl]'
+      - code_in: ['inc a', 'dec a']
       - rewind: 1
         when: { code_eq: 'ld [hl], a' }
 
   py_deref_hl_inc_dec_eq_a:
     name: '*hl++|*hl-- = a'
     steps:
-      - when: { code_eq: 'ld [hl], a' }
-      - when:
-          any:
-            - { code_eq: 'inc hl' }
-            - { code_eq: 'dec hl' }
+      - code_eq: 'ld [hl], a'
+      - code_in: ['inc hl', 'dec hl']
 
   py_deref_hl_inc_dec_eq_n:
     name: '*hl++|*hl-- = N'
     steps:
-      - when: { regex: LD_MEMHL_IMM }
-      - when:
-          any:
-            - { code_eq: 'inc hl' }
-            - { code_eq: 'dec hl' }
+      - regex: LD_MEMHL_IMM
+      - code_in: ['inc hl', 'dec hl']
 
   py_a_eq_deref_hl_inc_dec:
     name: 'a = *hl++|*hl--'
     steps:
-      - when: { code_eq: 'ld a, [hl]' }
-      - when:
-          any:
-            - { code_eq: 'inc hl' }
-            - { code_eq: 'dec hl' }
+      - code_eq: 'ld a, [hl]'
+      - code_in: ['inc hl', 'dec hl']
 
   py_deref_hl_inc_dec_eq_r:
     name: '*hl++|*hl-- = b|c|d|e'
     steps:
-      - when: { regex: LD_MEMHL_R }
-      - when:
-          any:
-            - { code_eq: 'inc hl' }
-            - { code_eq: 'dec hl' }
+      - regex: LD_MEMHL_R
+      - code_in: ['inc hl', 'dec hl']
 
   py_r_eq_deref_hl_inc_dec:
     name: 'b|c|d|e = *hl++|*hl--'
     steps:
-      - when: { regex: LD_R_MEMHL }
-      - when:
-          any:
-            - { code_eq: 'inc hl' }
-            - { code_eq: 'dec hl' }
+      - regex: LD_R_MEMHL
+      - code_in: ['inc hl', 'dec hl']
 
   py_a_eq_0_cmp:
     name: a == 0
     steps:
-      - when: { regex: CP_OR_0_OR_AND_FF }
+      - regex: CP_OR_0_OR_AND_FF
 
   py_a_eq_1_cmp:
     name: a == 1
     steps:
-      - when: { regex: CP_1 }
+      - regex: CP_1
 
   py_ei_ret:
     name: ei + ret
     steps:
-      - when: { code_eq: ei }
-      - when: { code_eq: ret }
+      - code_eq: ei
+      - code_eq: ret
 
   py_tail_call:
     name: Tail call
     steps:
-      - when:
-          all:
-            - { code_starts_with: 'call ' }
-            - not: { code_contains: ',' }
-      - when: { code_eq: ret }
+      - all:
+          - { code_starts_with: 'call ' }
+          - not: { code_contains: ',' }
+      - code_eq: ret
 
   py_tail_farcall:
     name: Tail farcall
     steps:
-      - when:
-          all:
-            - { code_starts_with: 'farcall ' }
-            - not: { code_contains: ',' }
-      - when: { code_eq: ret }
+      - all:
+          - { code_starts_with: 'farcall ' }
+          - not: { code_contains: ',' }
+      - code_eq: ret
 
   py_tail_predef:
     name: Tail predef
     steps:
-      - when: { code_starts_with: 'predef ' }
-      - when: { code_eq: ret }
+      - code_starts_with: 'predef '
+      - code_eq: ret
 
   py_fallthrough:
     name: Fallthrough
     steps:
-      - when:
-          all:
-            - { code_starts_with: 'call ' }
-            - not: { code_contains: ',' }
-      - when: { code_eq: ret }
-      - when:
-          str_eq:
-            left: { current: code, strip_trailing_colon: true }
-            right:
-              prev: { idx: 0, field: code }
-              after_prefix: 'call '
-              trim: true
+      - all:
+          - { code_starts_with: 'call ' }
+          - not: { code_contains: ',' }
+      - code_eq: ret
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right:
+            prev: { idx: 0, field: code }
+            after_prefix: 'call '
+            trim: true
 
   py_conditional_call:
     name: Conditional call
     steps:
-      - when: { regex: JUMP_NZ_OR_ZC }
-      - when:
-          all:
-            - { code_starts_with: 'call ' }
-            - not: { code_contains: ',' }
-      - when:
-          any:
-            - all:
-                - { regex: JR_JP_JMP_ANY }
-                - not: { code_contains: ',' }
-                - str_eq:
-                    left:
-                      current: code
-                      last_token: true
-                    right:
-                      prev: { idx: 0, field: code }
-                      after_comma: true
-                      trim: true
-            - str_eq:
-                left: { current: code, strip_trailing_colon: true }
-                right:
-                  prev: { idx: 0, field: code }
-                  after_comma: true
-                  trim: true
+      - regex: JUMP_NZ_OR_ZC
+      - all:
+          - { code_starts_with: 'call ' }
+          - not: { code_contains: ',' }
+      - any:
+          - all:
+              - { regex: JR_JP_JMP_ANY }
+              - not: { code_contains: ',' }
+              - str_eq:
+                  left:
+                    current: code
+                    last_token: true
+                  right:
+                    prev: { idx: 0, field: code }
+                    after_comma: true
+                    trim: true
+          - str_eq:
+              left: { current: code, strip_trailing_colon: true }
+              right:
+                prev: { idx: 0, field: code }
+                after_comma: true
+                trim: true
 
   py_conditional_return:
     name: Conditional return
     steps:
-      - when: { regex: JUMP_NZ_OR_ZC }
-      - when: { code_eq: ret }
-      - when:
-          str_eq:
-            left: { current: code, strip_trailing_colon: true }
-            right:
-              prev: { idx: 0, field: code }
-              after_comma: true
-              trim: true
+      - regex: JUMP_NZ_OR_ZC
+      - code_eq: ret
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right:
+            prev: { idx: 0, field: code }
+            after_comma: true
+            trim: true
 
   py_conditional_fallthrough:
     name: Conditional fallthrough
     steps:
-      - when: { regex: JUMP_NZ_OR_ZC }
-      - when:
-          all:
-            - { regex: JR_JP_JMP_ANY }
-            - not: { code_contains: ',' }
-            - { code_ne: 'jp hl' }
-      - when:
-          str_eq:
-            left: { current: code, strip_trailing_colon: true }
-            right:
-              prev: { idx: 0, field: code }
-              after_comma: true
-              trim: true
+      - regex: JUMP_NZ_OR_ZC
+      - all:
+          - { regex: JR_JP_JMP_ANY }
+          - not: { code_contains: ',' }
+          - { code_ne: 'jp hl' }
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right:
+            prev: { idx: 0, field: code }
+            after_comma: true
+            trim: true
 
   py_call_hl:
     name: call hl
     steps:
-      - when: { regex: LD_BCDE_IMM_NOT_HBD }
-      - when:
-          all:
-            - any:
-                - { code_eq: 'push bc' }
-                - { code_eq: 'push de' }
-            - str_eq:
-                left:
-                  current: code
-                  after_prefix: 'push '
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_prefix: 'ld '
-                  before_comma: true
-                  trim: true
-      - when: { code_eq: 'jp hl' }
-      - when:
-          str_eq:
-            left: { current: code, strip_trailing_colon: true }
-            right:
-              prev: { idx: 0, field: code }
-              after_comma: true
-              trim: true
+      - regex: LD_BCDE_IMM_NOT_HBD
+      - all:
+          - any:
+              - code_in: ['push bc', 'push de']
+          - str_eq:
+              left:
+                current: code
+                after_prefix: 'push '
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_prefix: 'ld '
+                before_comma: true
+                trim: true
+      - code_eq: 'jp hl'
+      - str_eq:
+          left: { current: code, strip_trailing_colon: true }
+          right:
+            prev: { idx: 0, field: code }
+            after_comma: true
+            trim: true
 
   py_pointless_hli_hld:
     name: Pointless hli|hld
     steps:
-      - when: { regex: POINTLESS_HLI_HLD_STEP1 }
+      - regex: POINTLESS_HLI_HLD_STEP1
       - rewind: 1
         when:
           all:
             - not: { regex: CONTROL_FLOW_PREFIX }
             - not: { regex: WORD_HL }
-      - when: { regex: LD_HL_IMM_OR_POP_HL }
+      - regex: LD_HL_IMM_OR_POP_HL
 
   py_pointless_jumps:
     name: Pointless jumps
     steps:
-      - when:
-          all:
-            - { regex: POINTLESS_JUMPS_STEP1 }
-            - not: { code_contains: ',' }
-      - when:
-          all:
-            - str_eq:
-                left: { current: code, strip_trailing_colon: true }
-                right:
-                  prev: { idx: 0, field: code }
-                  last_token: true
-            - any:
-                - str_eq:
-                    left: { current: context }
-                    right: { prev: { idx: 0, field: context } }
-                - str_eq:
-                    left: { current: context }
-                    right: { current: code }
+      - all:
+          - { regex: POINTLESS_JUMPS_STEP1 }
+          - not: { code_contains: ',' }
+      - all:
+          - str_eq:
+              left: { current: code, strip_trailing_colon: true }
+              right:
+                prev: { idx: 0, field: code }
+                last_token: true
+          - any:
+              - str_eq:
+                  left: { current: context }
+                  right: { prev: { idx: 0, field: context } }
+              - str_eq:
+                  left: { current: context }
+                  right: { current: code }
 
   py_useless_loads:
     name: Useless loads
     steps:
-      - when:
-          all:
-            - { cond: is_ld_or_ldh }
-            - { code_contains: ',' }
-            - not: { cond: volatile_operand }
-      - when:
-          all:
-            - { cond: is_ld_or_ldh }
-            - { code_contains: ',' }
-            - not:
-                any:
-                  - { code_eq: 'ld h, [hl]' }
-                  - { code_eq: 'ld l, [hl]' }
-            - str_eq:
-                left:
-                  current: code
-                  before_comma: true
-                right:
-                  prev: { idx: 0, field: code }
-                  before_comma: true
+      - all:
+          - is_ld_or_ldh
+          - { code_contains: ',' }
+          - not: volatile_operand
+      - all:
+          - is_ld_or_ldh
+          - { code_contains: ',' }
+          - not:
+              any:
+                - { code_eq: 'ld h, [hl]' }
+                - { code_eq: 'ld l, [hl]' }
+          - str_eq:
+              left:
+                current: code
+                before_comma: true
+              right:
+                prev: { idx: 0, field: code }
+                before_comma: true
 
   py_redundant_loads:
     name: Redundant loads
     steps:
-      - when:
-          all:
-            - { cond: is_ld_or_ldh }
-            - { code_contains: ',' }
-            - not: { cond: volatile_operand }
-      - when:
-          all:
-            - { cond: is_ld_or_ldh }
-            - { code_contains: ',' }
-            - str_eq:
-                left: { current: context }
-                right: { prev: { idx: 0, field: context } }
-            - str_eq:
-                left:
-                  current: code
-                  after_prefix: 'ld'
-                  before_comma: true
-                  last_token: true
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_comma: true
-                  trim: true
-            - str_eq:
-                left:
-                  current: code
-                  after_comma: true
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_prefix: 'ld'
-                  before_comma: true
-                  last_token: true
-                  trim: true
+      - all:
+          - is_ld_or_ldh
+          - { code_contains: ',' }
+          - not: volatile_operand
+      - all:
+          - is_ld_or_ldh
+          - { code_contains: ',' }
+          - str_eq:
+              left: { current: context }
+              right: { prev: { idx: 0, field: context } }
+          - str_eq:
+              left:
+                current: code
+                after_prefix: 'ld'
+                before_comma: true
+                last_token: true
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_comma: true
+                trim: true
+          - str_eq:
+              left:
+                current: code
+                after_comma: true
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_prefix: 'ld'
+                before_comma: true
+                last_token: true
+                trim: true
 
   py_similar_loads:
     name: Similar loads
     steps:
-      - when:
-          all:
-            - { cond: is_ld_or_ldh }
-            - { code_contains: ',' }
-            - not: { regex: LOAD_SRC_IS_SINGLE_REG }
-            - not: { cond: volatile_operand }
-      - when:
-          all:
-            - { code_starts_with: 'ld a,' }
-            - str_eq:
-                left:
-                  current: code
-                  after_comma_raw: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_comma_raw: true
+      - all:
+          - is_ld_or_ldh
+          - { code_contains: ',' }
+          - not: { regex: LOAD_SRC_IS_SINGLE_REG }
+          - not: volatile_operand
+      - all:
+          - { code_starts_with: 'ld a,' }
+          - str_eq:
+              left:
+                current: code
+                after_comma_raw: true
+              right:
+                prev: { idx: 0, field: code }
+                after_comma_raw: true
 
   py_conditionally_load_0:
     name: Conditionally load 0
     steps:
-      - when:
-          any:
-            - { code_starts_with: 'and ' }
-            - { code_starts_with: 'or ' }
-      - when: { regex: JR_NZ }
-      - when: { regex: LD_ANY_0 }
+      - any:
+          - { code_starts_with: 'and ' }
+          - { code_starts_with: 'or ' }
+      - regex: JR_NZ
+      - regex: LD_ANY_0
 
   py_inefficient_prefix_opcodes:
     name: Inefficient prefix opcodes
     steps:
-      - when: { regex: PREFIX_A }
+      - regex: PREFIX_A
 
   py_redundant_and_or:
     name: Redundant and|or
     steps:
-      - when: { regex: AND_OR_XOR }
-      - when: { regex: AND_OR_A }
+      - regex: AND_OR_XOR
+      - regex: AND_OR_A
 
   py_pointless_and_or_a:
     name: Pointless and|or a
     steps:
-      - when: { regex: AND_OR_A }
-      - when: { regex: AFFECTS_ZC }
+      - regex: AND_OR_A
+      - regex: AFFECTS_ZC
 
   py_redundant_inc_dec:
     name: Redundant inc|dec
     steps:
-      - when: { regex: LD_ANY_IMM_NOT_REG_OR_MEM }
-      - when:
-          any:
-            - all:
-                - { code_starts_with: 'inc ' }
-                - str_eq:
-                    left:
-                      current: code
-                      after_prefix: 'inc '
-                      trim: true
-                    right:
-                      prev: { idx: 0, field: code }
-                      before_comma: true
-                      strip_prefix: 'ld'
-                      trim: true
-            - all:
-                - { code_starts_with: 'dec ' }
-                - str_eq:
-                    left:
-                      current: code
-                      after_prefix: 'dec '
-                      trim: true
-                    right:
-                      prev: { idx: 0, field: code }
-                      before_comma: true
-                      strip_prefix: 'ld'
-                      trim: true
+      - regex: LD_ANY_IMM_NOT_REG_OR_MEM
+      - any:
+          - all:
+              - { code_starts_with: 'inc ' }
+              - str_eq:
+                  left:
+                    current: code
+                    after_prefix: 'inc '
+                    trim: true
+                  right:
+                    prev: { idx: 0, field: code }
+                    before_comma: true
+                    strip_prefix: 'ld'
+                    trim: true
+          - all:
+              - { code_starts_with: 'dec ' }
+              - str_eq:
+                  left:
+                    current: code
+                    after_prefix: 'dec '
+                    trim: true
+                  right:
+                    prev: { idx: 0, field: code }
+                    before_comma: true
+                    strip_prefix: 'ld'
+                    trim: true
 
   py_pair_eq_n_then_other_then_add:
     name: hl|bc|de = N / bc|de|hl = K / hl|bc|de += bc|de|hl
     steps:
-      - when: { regex: LD_PAIR_IMM }
-      - when:
-          all:
-            - { regex: LD_PAIR_IMM }
-            - not:
-                str_eq:
-                  left:
-                    current: code
-                    byte_at: 2
-                  right:
-                    prev: { idx: 0, field: code }
-                    byte_at: 3
+      - regex: LD_PAIR_IMM
+      - all:
+          - { regex: LD_PAIR_IMM }
+          - not:
+              str_eq:
+                left:
+                  current: code
+                  byte_at: 2
+                right:
+                  prev: { idx: 0, field: code }
+                  byte_at: 3
       - rewind: 1
         when:
           all:
@@ -1177,9 +1099,9 @@ patterns:
   py_pair_eq_n_then_inc_dec:
     name: hl|bc|de = N / ... / inc|dec hl|bc|de
     steps:
-      - when: { regex: LD_PAIR_IMM }
+      - regex: LD_PAIR_IMM
       - rewind: 1
-        when: { cond: pair_eq_n_gap_is_safe }
+        when: pair_eq_n_gap_is_safe
       - rewind: 1
         when:
           any:
@@ -1211,231 +1133,220 @@ patterns:
   py_pair_eq_n_and_other_add:
     name: hl|bc|de = N / ... / bc|de|hl = K / hl|bc|de += bc|de|hl
     steps:
-      - when: { regex: LD_PAIR_IMM }
+      - regex: LD_PAIR_IMM
       - rewind: 1
-        when: { cond: pair_eq_n_gap_is_safe }
-      - when: { regex: LD_PAIR_IMM }
+        when: pair_eq_n_gap_is_safe
+      - regex: LD_PAIR_IMM
       - rewind: 1
-        when: { cond: pair_add_three_step_matches_prev_pairs }
+        when: pair_add_three_step_matches_prev_pairs
 
   py_dec_a_then_addntimes:
     name: dec a, then AddNTimes
     steps:
-      - when: { regex: LD_HL_IMM }
-      - when:
-          any:
-            - { regex: LD_BC_IMM }
-            - { code_eq: 'dec a' }
-      - when:
-          all:
-            - any:
-                - { regex: LD_BC_IMM }
-                - { code_eq: 'dec a' }
-            - any:
-                - all:
-                    - str_eq:
-                        left: { current: code }
-                        right: { const: 'dec a' }
-                    - not:
-                        str_eq:
-                          left: { prev: { idx: 1, field: code } }
-                          right: { const: 'dec a' }
-                - all:
-                    - not:
-                        str_eq:
-                          left: { current: code }
-                          right: { const: 'dec a' }
-                    - str_eq:
+      - regex: LD_HL_IMM
+      - any:
+          - { regex: LD_BC_IMM }
+          - { code_eq: 'dec a' }
+      - all:
+          - any:
+              - { regex: LD_BC_IMM }
+              - { code_eq: 'dec a' }
+          - any:
+              - all:
+                  - str_eq:
+                      left: { current: code }
+                      right: { const: 'dec a' }
+                  - not:
+                      str_eq:
                         left: { prev: { idx: 1, field: code } }
                         right: { const: 'dec a' }
-      - when: { regex: CALL_RST_ADDNTIMES }
+              - all:
+                  - not:
+                      str_eq:
+                        left: { current: code }
+                        right: { const: 'dec a' }
+                  - str_eq:
+                      left: { prev: { idx: 1, field: code } }
+                      right: { const: 'dec a' }
+      - regex: CALL_RST_ADDNTIMES
 
   py_redundant_ret:
     name: Redundant ret
     steps:
-      - when:
-          any:
-            - { code_eq: ret }
-            - { code_starts_with: 'ret ' }
-      - when:
-          any:
-            - { code_eq: ret }
-            - all:
-                - { code_starts_with: 'ret ' }
-                - any:
-                    - str_eq:
-                        left: { prev: { idx: 0, field: code } }
-                        right: { const: 'ret' }
-                    - str_eq:
-                        left:
-                          current: code
-                          last_char: true
-                        right:
-                          prev: { idx: 0, field: code }
-                          last_char: true
+      - any:
+          - { code_eq: ret }
+          - { code_starts_with: 'ret ' }
+      - any:
+          - { code_eq: ret }
+          - all:
+              - { code_starts_with: 'ret ' }
+              - any:
+                  - str_eq:
+                      left: { prev: { idx: 0, field: code } }
+                      right: { const: 'ret' }
+                  - str_eq:
+                      left:
+                        current: code
+                        last_char: true
+                      right:
+                        prev: { idx: 0, field: code }
+                        last_char: true
 
   py_stub_function:
     name: Stub function
     steps:
-      - when: { cond: label_definition_line }
-      - when: { code_eq: ret }
+      - label_definition_line
+      - code_eq: ret
 
   py_stub_jump:
     name: Stub jump
     steps:
-      - when: { cond: label_definition_line }
-      - when:
-          all:
-            - { code_starts_with: 'jr ' }
-            - not: { code_contains: ',' }
+      - label_definition_line
+      - all:
+          - { code_starts_with: 'jr ' }
+          - not: { code_contains: ',' }
 
   py_wram_inc_dec:
     name: Inefficient WRAM increment/decrement
     steps:
-      - when: { regex: LD_WRAM_LOAD }
-      - when:
-          any:
-            - { code_eq: 'inc a' }
-            - { code_eq: 'dec a' }
-      - when:
-          all:
-            - { regex: LD_WRAM_STORE }
-            - str_eq:
-                left:
-                  current: code
-                  before_comma: true
-                  strip_prefix: 'ld '
-                  trim: true
-                right:
-                  prev: { idx: 0, field: code }
-                  after_comma: true
-                  trim: true
+      - regex: LD_WRAM_LOAD
+      - code_in: ['inc a', 'dec a']
+      - all:
+          - { regex: LD_WRAM_STORE }
+          - str_eq:
+              left:
+                current: code
+                before_comma: true
+                strip_prefix: 'ld '
+                trim: true
+              right:
+                prev: { idx: 0, field: code }
+                after_comma: true
+                trim: true
 
   py_trailing_string_space:
     name: Trailing string space
     steps:
-      - when: { regex: TEXT_TRAILING_SPACE }
-      - when: { not: { regex: TEXT_COMMAND_FOLLOWS } }
+      - regex: TEXT_TRAILING_SPACE
+      - not: { regex: TEXT_COMMAND_FOLLOWS }
 
   no_op_add_sub:
     name: No-op add|sub
     steps:
-      - when:
-          any:
-            - instruction:
-                mnemonic: add
-                operands:
-                  - { is_zero_literal: true }
-            - instruction:
-                mnemonic: sub
-                operands:
-                  - { is_zero_literal: true }
-            - instruction:
-                mnemonic: add
-                operands:
-                  - { eq: a }
-                  - { is_zero_literal: true }
-            - instruction:
-                mnemonic: sub
-                operands:
-                  - { eq: a }
-                  - { is_zero_literal: true }
+      - any:
+          - instruction:
+              mnemonic: add
+              operands:
+                - { is_zero_literal: true }
+          - instruction:
+              mnemonic: sub
+              operands:
+                - { is_zero_literal: true }
+          - instruction:
+              mnemonic: add
+              operands:
+                - { eq: a }
+                - { is_zero_literal: true }
+          - instruction:
+              mnemonic: sub
+              operands:
+                - { eq: a }
+                - { is_zero_literal: true }
 
   ld_a_from_hli:
     name: Load a from [hli]/[hl+]
     steps:
-      - when:
-          instruction:
-            mnemonic: ld
-            operands:
-              - { eq: a }
-              - { canon_eq: '[hli]' }
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { eq: a }
+            - { canon_eq: '[hli]' }
 
 packs:
   core:
     patterns:
-      - id: py_no_op_ld
-      - id: no_op_add_sub
-      - id: ld_a_from_hli
+      - py_no_op_ld
+      - no_op_add_sub
+      - ld_a_from_hli
 
   rgbds:
     patterns:
-      - id: py_redundant_arguments
-      - id: py_nops
-      - id: py_no_op_ld
-      - id: no_op_add_sub
-      - id: py_a_eq_0
-      - id: py_a_inc_dec
-      - id: py_a_times_2
-      - id: py_a_not
-      - id: ld_a_from_hli
+      - py_redundant_arguments
+      - py_nops
+      - py_no_op_ld
+      - no_op_add_sub
+      - py_a_eq_0
+      - py_a_inc_dec
+      - py_a_times_2
+      - py_a_not
+      - ld_a_from_hli
 
   pret:
     patterns:
-      - id: py_redundant_arguments
-      - id: py_nops
-      - id: py_no_op_ld
-      - id: py_no_op_add_sub
-      - id: py_inefficient_hram_load
-      - id: py_inefficient_hram_store
-      - id: py_a_eq_0
-      - id: py_a_inc_dec
-      - id: py_a_times_2
-      - id: py_a_not
-      - id: py_a_eq_n_minus_a
-      - id: py_a_eq_carry_pq
-      - id: py_a_inc_dec_if_carry
-      - id: py_a_inc_dec_if_not_carry
-      - id: py_a_shift_right_3
-      - id: py_a_eq_x_plusminus_carry
-      - id: py_a_eq_carry_plusminus_x
-      - id: py_reg_conditional_ternary
-      - id: py_a_and_x_eq_x
-      - id: py_a_mask_or
-      - id: py_pair_add_a_or_n
-      - id: py_pair_add_a_or_n_jump
-      - id: py_pair_eq_foo_plus_a
-      - id: py_reg_plus_carry
-      - id: py_reg_minus_carry
-      - id: py_pair_eq_a_mul_16
-      - id: py_pair_eq_a_mul_16_rept
-      - id: py_hl_mul_2
-      - id: py_pair_eq_deref_foo
-      - id: py_pair_load_pq
-      - id: py_deref_hl_eq_n
-      - id: py_deref_hl_inc_dec
-      - id: py_deref_hl_inc_dec_eq_a
-      - id: py_deref_hl_inc_dec_eq_n
-      - id: py_a_eq_deref_hl_inc_dec
-      - id: py_deref_hl_inc_dec_eq_r
-      - id: py_r_eq_deref_hl_inc_dec
-      - id: py_a_eq_0_cmp
-      - id: py_a_eq_1_cmp
-      - id: py_ei_ret
-      - id: py_tail_call
-      - id: py_tail_farcall
-      - id: py_tail_predef
-      - id: py_fallthrough
-      - id: py_conditional_call
-      - id: py_conditional_return
-      - id: py_conditional_fallthrough
-      - id: py_call_hl
-      - id: py_pointless_hli_hld
-      - id: py_pointless_jumps
-      - id: py_useless_loads
-      - id: py_redundant_loads
-      - id: py_similar_loads
-      - id: py_conditionally_load_0
-      - id: py_inefficient_prefix_opcodes
-      - id: py_redundant_and_or
-      - id: py_pointless_and_or_a
-      - id: py_redundant_inc_dec
-      - id: py_pair_eq_n_then_other_then_add
-      - id: py_pair_eq_n_then_inc_dec
-      - id: py_pair_eq_n_and_other_add
-      - id: py_dec_a_then_addntimes
-      - id: py_redundant_ret
-      - id: py_stub_function
-      - id: py_stub_jump
-      - id: py_wram_inc_dec
-      - id: py_trailing_string_space
+      - py_redundant_arguments
+      - py_nops
+      - py_no_op_ld
+      - py_no_op_add_sub
+      - py_inefficient_hram_load
+      - py_inefficient_hram_store
+      - py_a_eq_0
+      - py_a_inc_dec
+      - py_a_times_2
+      - py_a_not
+      - py_a_eq_n_minus_a
+      - py_a_eq_carry_pq
+      - py_a_inc_dec_if_carry
+      - py_a_inc_dec_if_not_carry
+      - py_a_shift_right_3
+      - py_a_eq_x_plusminus_carry
+      - py_a_eq_carry_plusminus_x
+      - py_reg_conditional_ternary
+      - py_a_and_x_eq_x
+      - py_a_mask_or
+      - py_pair_add_a_or_n
+      - py_pair_add_a_or_n_jump
+      - py_pair_eq_foo_plus_a
+      - py_reg_plus_carry
+      - py_reg_minus_carry
+      - py_pair_eq_a_mul_16
+      - py_pair_eq_a_mul_16_rept
+      - py_hl_mul_2
+      - py_pair_eq_deref_foo
+      - py_pair_load_pq
+      - py_deref_hl_eq_n
+      - py_deref_hl_inc_dec
+      - py_deref_hl_inc_dec_eq_a
+      - py_deref_hl_inc_dec_eq_n
+      - py_a_eq_deref_hl_inc_dec
+      - py_deref_hl_inc_dec_eq_r
+      - py_r_eq_deref_hl_inc_dec
+      - py_a_eq_0_cmp
+      - py_a_eq_1_cmp
+      - py_ei_ret
+      - py_tail_call
+      - py_tail_farcall
+      - py_tail_predef
+      - py_fallthrough
+      - py_conditional_call
+      - py_conditional_return
+      - py_conditional_fallthrough
+      - py_call_hl
+      - py_pointless_hli_hld
+      - py_pointless_jumps
+      - py_useless_loads
+      - py_redundant_loads
+      - py_similar_loads
+      - py_conditionally_load_0
+      - py_inefficient_prefix_opcodes
+      - py_redundant_and_or
+      - py_pointless_and_or_a
+      - py_redundant_inc_dec
+      - py_pair_eq_n_then_other_then_add
+      - py_pair_eq_n_then_inc_dec
+      - py_pair_eq_n_and_other_add
+      - py_dec_a_then_addntimes
+      - py_redundant_ret
+      - py_stub_function
+      - py_stub_jump
+      - py_wram_inc_dec
+      - py_trailing_string_space

@@ -80,11 +80,15 @@ struct PackYaml {
 }
 
 #[derive(Deserialize)]
-struct PackPatternYaml {
-    id: String,
+#[serde(untagged)]
+enum PackPatternYaml {
+    Id(String),
+    Full {
+        id: String,
 
-    #[serde(default = "default_enabled")]
-    enabled_by_default: bool,
+        #[serde(default = "default_enabled")]
+        enabled_by_default: bool,
+    },
 }
 
 fn default_enabled() -> bool {
@@ -101,14 +105,20 @@ struct PatternYaml {
 }
 
 #[derive(Clone, Deserialize)]
-struct StepYaml {
-    rewind: Option<usize>,
-    when: ConditionYaml,
+#[serde(untagged)]
+enum StepYaml {
+    Full {
+        rewind: Option<usize>,
+        when: ConditionYaml,
+    },
+    When(ConditionYaml),
 }
 
 #[derive(Clone, Deserialize)]
 #[serde(untagged)]
 enum ConditionYaml {
+    /// Shorthand for `{ cond: NAME }`.
+    CondName(String),
     Regex { regex: String },
     RegexIn { regex_in: Vec<String> },
     TextRegex { text_regex: String },
@@ -352,6 +362,8 @@ impl<'a> ConditionCompiler<'a> {
 
     fn compile_inline(&mut self, yaml: ConditionYaml) -> Result<StepCondition, ConfigError> {
         Ok(match yaml {
+            ConditionYaml::CondName(cond) => self.compile_named(&cond)?,
+
             ConditionYaml::Regex { regex } => {
                 let Some(re) = self.regexes.get(&regex).cloned() else {
                     return Err(ConfigError::UnknownRegex(regex));
@@ -503,10 +515,18 @@ pub fn load_pattern_pack_yaml(contents: &str, pack_name: &str) -> Result<Pattern
     let mut out_patterns: Vec<PatternDefinition> = Vec::with_capacity(pack.patterns.len());
 
     for pp in &pack.patterns {
-        let Some(pat) = root.patterns.get(&pp.id) else {
+        let (id, enabled_by_default) = match pp {
+            PackPatternYaml::Id(id) => (id.as_str(), true),
+            PackPatternYaml::Full {
+                id,
+                enabled_by_default,
+            } => (id.as_str(), *enabled_by_default),
+        };
+
+        let Some(pat) = root.patterns.get(id) else {
             return Err(ConfigError::UnknownPatternId {
                 pack: pack_name.to_string(),
-                id: pp.id.clone(),
+                id: id.to_string(),
             });
         };
 
@@ -516,16 +536,21 @@ pub fn load_pattern_pack_yaml(contents: &str, pack_name: &str) -> Result<Pattern
 
         let mut steps: Vec<PatternStep> = Vec::with_capacity(pat.steps.len());
         for step in &pat.steps {
-            let cond = compiler.compile_inline(step.when.clone())?;
+            let (rewind, when) = match step {
+                StepYaml::Full { rewind, when } => (*rewind, when.clone()),
+                StepYaml::When(when) => (None, when.clone()),
+            };
+
+            let cond = compiler.compile_inline(when)?;
             steps.push(PatternStep {
-                rewind: step.rewind,
+                rewind,
                 condition: cond,
             });
         }
 
         out_patterns.push(PatternDefinition {
             name: pat.name.clone(),
-            enabled_by_default: pp.enabled_by_default,
+            enabled_by_default,
             description: pat.description.clone(),
             steps,
         });
@@ -592,17 +617,16 @@ patterns:
   no_op_ld:
     name: No-op ld
     steps:
-            - when:
-                    all:
-                        - { cond: not_halt }
+            - all:
+                        - not_halt
                         - { regex: NO_OP_LD }
-                        - { cond: regex_one_of }
-                        - { cond: str_eq_one_of }
+                        - regex_one_of
+                        - str_eq_one_of
 
 packs:
   core:
     patterns:
-      - id: no_op_ld
+      - no_op_ld
 "#;
 
         let pack = load_pattern_pack_yaml(yaml, "core").unwrap();
