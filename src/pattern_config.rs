@@ -54,7 +54,9 @@ impl std::fmt::Display for ConfigError {
             ConfigError::UnknownRegex(name) => write!(f, "unknown regex '{name}'"),
             ConfigError::InvalidRegex { name, err } => write!(f, "invalid regex '{name}': {err}"),
             ConfigError::InvalidOperand(msg) => write!(f, "invalid operand condition: {msg}"),
-            ConfigError::InvalidInstruction(msg) => write!(f, "invalid instruction condition: {msg}"),
+            ConfigError::InvalidInstruction(msg) => {
+                write!(f, "invalid instruction condition: {msg}")
+            }
             ConfigError::UnknownCondition(name) => write!(f, "unknown condition '{name}'"),
             ConfigError::ConditionCycle(name) => {
                 write!(f, "condition '{name}' forms a cycle")
@@ -65,7 +67,6 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {}
-
 #[derive(Deserialize)]
 struct RootYaml {
     #[serde(default)]
@@ -464,6 +465,12 @@ struct OperandYaml {
     is_zero_literal: Option<bool>,
 
     #[serde(default)]
+    lower: Option<bool>,
+
+    #[serde(default)]
+    is_one_literal: Option<bool>,
+
+    #[serde(default)]
     is_reg8: Option<bool>,
 
     #[serde(default)]
@@ -500,6 +507,24 @@ struct OperandYaml {
     is_number_literal: Option<bool>,
 
     #[serde(default)]
+    number_eq: Option<NumberLiteralYaml>,
+
+    #[serde(default)]
+    number_ne: Option<NumberLiteralYaml>,
+
+    #[serde(default)]
+    number_lt: Option<NumberLiteralYaml>,
+
+    #[serde(default)]
+    number_le: Option<NumberLiteralYaml>,
+
+    #[serde(default)]
+    number_gt: Option<NumberLiteralYaml>,
+
+    #[serde(default)]
+    number_ge: Option<NumberLiteralYaml>,
+
+    #[serde(default)]
     is_u3_literal: Option<bool>,
 
     #[serde(default)]
@@ -512,12 +537,34 @@ struct OperandYaml {
     any: Option<Vec<OperandYaml>>,
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+enum NumberLiteralYaml {
+    Int(i64),
+    Str(String),
+}
+
+impl NumberLiteralYaml {
+    fn into_i64(self, key: &str) -> Result<i64, ConfigError> {
+        match self {
+            NumberLiteralYaml::Int(value) => Ok(value),
+            NumberLiteralYaml::Str(raw) => crate::parse_rgbds_int(&raw).ok_or_else(|| {
+                ConfigError::InvalidOperand(format!(
+                    "{key} expects a number literal (e.g. 10, $ff, %1010), got '{raw}'"
+                ))
+            }),
+        }
+    }
+}
+
 impl OperandYaml {
     fn into_runtime(self) -> Result<crate::OperandCondition, ConfigError> {
         let OperandYaml {
             eq,
             canon_eq,
             is_zero_literal,
+            lower: _lower,
+            is_one_literal,
             is_reg8,
             is_reg16,
             is_reg16_stack,
@@ -530,6 +577,12 @@ impl OperandYaml {
             is_mem_c,
             is_imm,
             is_number_literal,
+            number_eq,
+            number_ne,
+            number_lt,
+            number_le,
+            number_gt,
+            number_ge,
             is_u3_literal,
             is_rst_vec_literal,
             any_operand,
@@ -540,6 +593,7 @@ impl OperandYaml {
             if eq.is_some()
                 || canon_eq.is_some()
                 || is_zero_literal.is_some()
+                || is_one_literal.is_some()
                 || is_reg8.is_some()
                 || is_reg16.is_some()
                 || is_reg16_stack.is_some()
@@ -552,6 +606,12 @@ impl OperandYaml {
                 || is_mem_c.is_some()
                 || is_imm.is_some()
                 || is_number_literal.is_some()
+                || number_eq.is_some()
+                || number_ne.is_some()
+                || number_lt.is_some()
+                || number_le.is_some()
+                || number_gt.is_some()
+                || number_ge.is_some()
                 || is_u3_literal.is_some()
                 || is_rst_vec_literal.is_some()
                 || any_operand.is_some()
@@ -584,44 +644,90 @@ impl OperandYaml {
             conds.push(crate::OperandCondition::CanonEq(canon_eq));
         }
 
-        let mut push_bool = |value: Option<bool>, cond: crate::OperandCondition| {
+        fn push_bool(
+            conds: &mut Vec<crate::OperandCondition>,
+            value: Option<bool>,
+            cond: crate::OperandCondition,
+        ) {
             match value {
-                None => Ok(()),
-                Some(true) => {
-                    conds.push(cond);
-                    Ok(())
-                }
-                Some(false) => {
-                    conds.push(crate::OperandCondition::Not(Box::new(cond)));
-                    Ok(())
-                }
+                None => {}
+                Some(true) => conds.push(cond),
+                Some(false) => conds.push(crate::OperandCondition::Not(Box::new(cond))),
             }
-        };
+        }
 
-        push_bool(is_zero_literal, crate::OperandCondition::IsZeroLiteral)?;
-        push_bool(is_reg8, crate::OperandCondition::IsReg8)?;
-        push_bool(is_reg16, crate::OperandCondition::IsReg16)?;
         push_bool(
+            &mut conds,
+            is_zero_literal,
+            crate::OperandCondition::IsZeroLiteral,
+        );
+        push_bool(
+            &mut conds,
+            is_one_literal,
+            crate::OperandCondition::NumberLiteralEq(1),
+        );
+        push_bool(&mut conds, is_reg8, crate::OperandCondition::IsReg8);
+        push_bool(&mut conds, is_reg16, crate::OperandCondition::IsReg16);
+        push_bool(
+            &mut conds,
             is_reg16_stack,
             crate::OperandCondition::IsReg16Stack,
-        )?;
-        push_bool(is_cc, crate::OperandCondition::IsCc)?;
-        push_bool(is_mem, crate::OperandCondition::IsMem)?;
-        push_bool(is_mem_hl, crate::OperandCondition::IsMemHl)?;
-        push_bool(is_mem_hli, crate::OperandCondition::IsMemHli)?;
-        push_bool(is_mem_hld, crate::OperandCondition::IsMemHld)?;
-        push_bool(is_mem_r16, crate::OperandCondition::IsMemR16)?;
-        push_bool(is_mem_c, crate::OperandCondition::IsMemC)?;
-        push_bool(is_imm, crate::OperandCondition::IsImm)?;
+        );
+        push_bool(&mut conds, is_cc, crate::OperandCondition::IsCc);
+        push_bool(&mut conds, is_mem, crate::OperandCondition::IsMem);
+        push_bool(&mut conds, is_mem_hl, crate::OperandCondition::IsMemHl);
+        push_bool(&mut conds, is_mem_hli, crate::OperandCondition::IsMemHli);
+        push_bool(&mut conds, is_mem_hld, crate::OperandCondition::IsMemHld);
+        push_bool(&mut conds, is_mem_r16, crate::OperandCondition::IsMemR16);
+        push_bool(&mut conds, is_mem_c, crate::OperandCondition::IsMemC);
+        push_bool(&mut conds, is_imm, crate::OperandCondition::IsImm);
         push_bool(
+            &mut conds,
             is_number_literal,
             crate::OperandCondition::IsNumberLiteral,
-        )?;
-        push_bool(is_u3_literal, crate::OperandCondition::IsU3Literal)?;
+        );
+
+        if let Some(value) = number_eq {
+            conds.push(crate::OperandCondition::NumberLiteralEq(
+                value.into_i64("number_eq")?,
+            ));
+        }
+        if let Some(value) = number_ne {
+            conds.push(crate::OperandCondition::NumberLiteralNe(
+                value.into_i64("number_ne")?,
+            ));
+        }
+        if let Some(value) = number_lt {
+            conds.push(crate::OperandCondition::NumberLiteralLt(
+                value.into_i64("number_lt")?,
+            ));
+        }
+        if let Some(value) = number_le {
+            conds.push(crate::OperandCondition::NumberLiteralLe(
+                value.into_i64("number_le")?,
+            ));
+        }
+        if let Some(value) = number_gt {
+            conds.push(crate::OperandCondition::NumberLiteralGt(
+                value.into_i64("number_gt")?,
+            ));
+        }
+        if let Some(value) = number_ge {
+            conds.push(crate::OperandCondition::NumberLiteralGe(
+                value.into_i64("number_ge")?,
+            ));
+        }
+
         push_bool(
+            &mut conds,
+            is_u3_literal,
+            crate::OperandCondition::IsU3Literal,
+        );
+        push_bool(
+            &mut conds,
             is_rst_vec_literal,
             crate::OperandCondition::IsRstVecLiteral,
-        )?;
+        );
 
         if let Some(true) = any_operand {
             if !conds.is_empty() {
@@ -983,7 +1089,7 @@ mod tests {
 
     #[test]
     fn loads_pack_from_yaml_and_compiles_regexes() {
-                let yaml = r#"
+        let yaml = r#"
 regexes:
     NO_OP_LD: '^ld ([abcdehl]), \1$'
     CALL_OR_RET: '^(?:call|ret)'
@@ -1084,9 +1190,9 @@ packs:
         assert_eq!(got[4].1.len(), 2);
     }
 
-        #[test]
-        fn operand_maps_support_multiple_keys_and_false_negation() {
-                let yaml = r#"
+    #[test]
+    fn operand_maps_support_multiple_keys_and_false_negation() {
+        let yaml = r#"
 patterns:
     mem_but_not_mem_r16:
         name: Mem but not [bc]/[de]
@@ -1103,14 +1209,70 @@ packs:
             - mem_but_not_mem_r16
 "#;
 
-                let pack = load_pattern_pack_yaml(yaml, "core").unwrap();
-                let lines = preprocess_properties(
-                        "  ld a, [bc]\n  ld a, [de]\n  ld a, [hl]\n  ld a, [hFoo]\n",
-                );
-                let got = run_pack_on_lines("file.asm", &lines, &pack);
-                assert_eq!(got.len(), 1);
-                assert_eq!(got[0].0, "Mem but not [bc]/[de]");
-                assert_eq!(got[0].1.len(), 1);
-                assert_eq!(got[0].1[0].lines[0].code, "ld a, [hFoo]");
-        }
+        let pack = load_pattern_pack_yaml(yaml, "core").unwrap();
+        let lines =
+            preprocess_properties("  ld a, [bc]\n  ld a, [de]\n  ld a, [hl]\n  ld a, [hFoo]\n");
+        let got = run_pack_on_lines("file.asm", &lines, &pack);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0, "Mem but not [bc]/[de]");
+        assert_eq!(got[0].1.len(), 1);
+        assert_eq!(got[0].1[0].lines[0].code, "ld a, [hFoo]");
+    }
+
+    #[test]
+    fn operand_maps_support_number_literal_comparisons() {
+        let yaml = r#"
+patterns:
+    small_imm:
+        name: Small immediate
+        steps:
+            - instruction:
+                    mnemonic: ld
+                    operands:
+                        - { eq: a }
+                        - { number_lt: 10 }
+
+    not_ten:
+        name: Not ten
+        steps:
+            - instruction:
+                    mnemonic: ld
+                    operands:
+                        - { eq: a }
+                        - { number_ne: 10 }
+
+    between:
+        name: Between 8 and 15
+        steps:
+            - instruction:
+                    mnemonic: ld
+                    operands:
+                        - { eq: a }
+                        - { number_ge: 8, number_le: 15 }
+
+packs:
+    core:
+        patterns:
+            - small_imm
+            - not_ten
+            - between
+"#;
+
+        let pack = load_pattern_pack_yaml(yaml, "core").unwrap();
+        let lines = preprocess_properties(
+            "  ld a, 7\n  ld a, 9\n  ld a, 10\n  ld a, $0f\n  ld a, Label\n  ld a, $30+8\n",
+        );
+        let got = run_pack_on_lines("file.asm", &lines, &pack);
+
+        assert_eq!(got.len(), 3);
+
+        assert_eq!(got[0].0, "Small immediate");
+        assert_eq!(got[0].1.len(), 2);
+
+        assert_eq!(got[1].0, "Not ten");
+        assert_eq!(got[1].1.len(), 3);
+
+        assert_eq!(got[2].0, "Between 8 and 15");
+        assert_eq!(got[2].1.len(), 3);
+    }
 }

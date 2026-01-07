@@ -297,12 +297,11 @@ fn first_instruction_segment(code: &str) -> &str {
             b')' => paren_depth -= 1,
             b'{' => brace_depth += 1,
             b'}' => brace_depth -= 1,
-            b':'
-                if bracket_depth == 0
-                    && paren_depth == 0
-                    && brace_depth == 0
-                    && i + 1 < bytes.len()
-                    && bytes[i + 1] == b':' =>
+            b':' if bracket_depth == 0
+                && paren_depth == 0
+                && brace_depth == 0
+                && i + 1 < bytes.len()
+                && bytes[i + 1] == b':' =>
             {
                 return &code[..i];
             }
@@ -561,6 +560,12 @@ pub enum OperandCondition {
     Eq(String),
     CanonEq(String),
     IsZeroLiteral,
+    NumberLiteralEq(i64),
+    NumberLiteralNe(i64),
+    NumberLiteralLt(i64),
+    NumberLiteralLe(i64),
+    NumberLiteralGt(i64),
+    NumberLiteralGe(i64),
     IsReg8,
     IsReg16,
     IsReg16Stack,
@@ -587,6 +592,24 @@ impl OperandCondition {
             OperandCondition::Eq(want) => operand.eq_ignore_ascii_case(want),
             OperandCondition::CanonEq(want) => canonicalize_rgbds_operand(operand) == *want,
             OperandCondition::IsZeroLiteral => is_rgbds_zero_literal(operand),
+            OperandCondition::NumberLiteralEq(want) => {
+                matches!(parse_rgbds_int(operand), Some(got) if got == *want)
+            }
+            OperandCondition::NumberLiteralNe(want) => {
+                matches!(parse_rgbds_int(operand), Some(got) if got != *want)
+            }
+            OperandCondition::NumberLiteralLt(want) => {
+                matches!(parse_rgbds_int(operand), Some(got) if got < *want)
+            }
+            OperandCondition::NumberLiteralLe(want) => {
+                matches!(parse_rgbds_int(operand), Some(got) if got <= *want)
+            }
+            OperandCondition::NumberLiteralGt(want) => {
+                matches!(parse_rgbds_int(operand), Some(got) if got > *want)
+            }
+            OperandCondition::NumberLiteralGe(want) => {
+                matches!(parse_rgbds_int(operand), Some(got) if got >= *want)
+            }
             OperandCondition::IsReg8 => is_rgbds_reg8(operand),
             OperandCondition::IsReg16 => is_rgbds_reg16(operand),
             OperandCondition::IsReg16Stack => is_rgbds_reg16_stack(operand),
@@ -621,7 +644,10 @@ fn canonical_operand_for_kind_checks(op: &str) -> String {
 }
 
 fn is_rgbds_reg8(op: &str) -> bool {
-    matches!(canonical_operand_for_kind_checks(op).as_str(), "a" | "b" | "c" | "d" | "e" | "h" | "l")
+    matches!(
+        canonical_operand_for_kind_checks(op).as_str(),
+        "a" | "b" | "c" | "d" | "e" | "h" | "l"
+    )
 }
 
 fn is_rgbds_reg16(op: &str) -> bool {
@@ -673,7 +699,10 @@ fn is_rgbds_mem_hld(op: &str) -> bool {
 }
 
 fn is_rgbds_mem_r16(op: &str) -> bool {
-    matches!(parse_bracketed_operand(op).as_deref(), Some("bc") | Some("de") | Some("hl"))
+    matches!(
+        parse_bracketed_operand(op).as_deref(),
+        Some("bc") | Some("de") | Some("hl")
+    )
 }
 
 fn is_rgbds_mem_c(op: &str) -> bool {
@@ -686,7 +715,11 @@ fn is_rgbds_immediate_like(op: &str) -> bool {
     if op.trim().is_empty() {
         return false;
     }
-    !is_rgbds_reg8(op) && !is_rgbds_reg16(op) && !is_rgbds_reg16_stack(op) && !is_rgbds_cc(op) && !is_rgbds_mem_any(op)
+    !is_rgbds_reg8(op)
+        && !is_rgbds_reg16(op)
+        && !is_rgbds_reg16_stack(op)
+        && !is_rgbds_cc(op)
+        && !is_rgbds_mem_any(op)
 }
 
 fn is_rgbds_u3_literal(op: &str) -> bool {
@@ -716,13 +749,71 @@ impl InstructionCondition {
         }
 
         if !self.operands.is_empty() {
-            if ins.operands.len() != self.operands.len() {
-                return false;
-            }
-            for (op, cond) in ins.operands.iter().zip(self.operands.iter()) {
-                if !cond.matches(op) {
-                    return false;
+            if ins.operands.len() == self.operands.len() {
+                for (op, cond) in ins.operands.iter().zip(self.operands.iter()) {
+                    if !cond.matches(op) {
+                        return false;
+                    }
                 }
+            } else if ins.operands.len() == 1 && self.operands.len() == 2 {
+                // Support implicit accumulator forms like `sub 1` == `sub a, 1` for
+                // common mnemonics that implicitly operate on `a`.
+                match ins.mnemonic.as_str() {
+                    "add" | "sub" | "adc" | "sbc" | "and" | "xor" | "or" | "cp" => {
+                        // Only apply when the pattern expects an `a` as the first operand.
+                        if let crate::OperandCondition::Eq(want) = &self.operands[0] {
+                            if !want.eq_ignore_ascii_case("a") {
+                                return false;
+                            }
+                        } else {
+                            return false;
+                        }
+
+                        // Only apply implicit-`a` if the pattern's second operand is
+                        // numeric-like (e.g. `is_number_literal`, `number_eq`,
+                        // `is_zero_literal`, etc.) so we don't accidentally treat
+                        // `add a` as `add a, a`.
+                        fn numeric_like(cond: &crate::OperandCondition) -> bool {
+                            use crate::OperandCondition::*;
+                            match cond {
+                                IsNumberLiteral
+                                | IsImm
+                                | IsU3Literal
+                                | IsRstVecLiteral
+                                | IsZeroLiteral
+                                | NumberLiteralEq(_)
+                                | NumberLiteralNe(_)
+                                | NumberLiteralLt(_)
+                                | NumberLiteralLe(_)
+                                | NumberLiteralGt(_)
+                                | NumberLiteralGe(_) => true,
+                                Any(opts) | All(opts) => opts.iter().any(|c| numeric_like(c)),
+                                Not(c) => numeric_like(c),
+                                _ => false,
+                            }
+                        }
+
+                        if !numeric_like(&self.operands[1]) {
+                            return false;
+                        }
+
+                        // Only treat single-operand forms as implicit-`a` when the single
+                        // operand is an immediate-like value (e.g. `1`, `$ff`, a symbol).
+                        let real_op = &ins.operands[0];
+                        if !is_rgbds_immediate_like(real_op) {
+                            return false;
+                        }
+
+                        // Synthetic first operand `a`, then check the single real operand
+                        // against the second expected condition.
+                        if !self.operands[1].matches(real_op) {
+                            return false;
+                        }
+                    }
+                    _ => return false,
+                }
+            } else {
+                return false;
             }
         }
 
@@ -1395,6 +1486,12 @@ mod tests {
         assert!(!OperandCondition::IsImm.matches("[hl]"));
 
         assert!(OperandCondition::IsNumberLiteral.matches("%111"));
+        assert!(OperandCondition::NumberLiteralEq(10).matches("%1010"));
+        assert!(OperandCondition::NumberLiteralEq(10).matches("10"));
+        assert!(OperandCondition::NumberLiteralLt(16).matches("$0f"));
+        assert!(OperandCondition::NumberLiteralGe(255).matches("$ff"));
+        assert!(!OperandCondition::NumberLiteralGt(10).matches("10"));
+        assert!(!OperandCondition::NumberLiteralEq(10).matches("Label"));
         assert!(OperandCondition::IsU3Literal.matches("7"));
         assert!(!OperandCondition::IsU3Literal.matches("8"));
         assert!(OperandCondition::IsRstVecLiteral.matches("$38"));
@@ -1492,7 +1589,10 @@ mod tests {
 
         let wildcard_second_operand = StepCondition::Instruction(InstructionCondition {
             mnemonic: Some("add".into()),
-            operands: vec![OperandCondition::Eq("a".into()), OperandCondition::AnyOperand],
+            operands: vec![
+                OperandCondition::Eq("a".into()),
+                OperandCondition::AnyOperand,
+            ],
         });
         assert!(wildcard_second_operand.matches(&make_line("add a, b"), &[]));
         assert!(wildcard_second_operand.matches(&make_line("ADD a, $12"), &[]));

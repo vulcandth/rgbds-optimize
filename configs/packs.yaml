@@ -345,44 +345,64 @@ patterns:
     name: a = 0
     description: "Bad: ld a, 0. Good: xor a (unless you need to preserve flags)"
     steps:
-      - regex: A_EQ_0
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { eq: a }
+            - { is_zero_literal: true }
 
   py_a_inc_dec:
     name: a++|a--
     description: "Bad: add|sub 1. Good: inc|dec a (unless you need to set the carry flag)"
     steps:
-      - regex: A_INC_DEC
+      - instruction_in:
+          mnemonics: [add, sub]
+          operands:
+            - { eq: a }
+            - any:
+                - { is_one_literal: true }
 
   py_a_times_2:
     name: a *= 2
     description: "Bad: sla a. Good: add a"
     steps:
-      - code_eq: 'sla a'
+      - instruction:
+          mnemonic: sla
+          operands:
+            - { eq: a }
 
   py_a_not:
     name: a = ~a
     description: "Bad: xor $ff. Good: cpl"
     steps:
-      - regex: A_NOT
+      - instruction:
+          mnemonic: xor
+          operands:
+            - { number_eq: 255 }
 
   py_a_eq_n_minus_a:
     name: a = N - a
     description: "Bad: ld b, a / ld a, N / sub b (or other intermediate registers). Good: cpl / add N + 1"
     steps:
-      - regex: LD_R_A
-      - regex: LD_A_IMM
+      - instruction: ld
+        operands:
+          - { is_reg8: true }
+          - { eq: a }
+      - instruction: ld
+        operands:
+          - { eq: a }
+          - { is_imm: true }
       - all:
-          - { regex: SUB_R }
+          - instruction: sub
+            operands:
+              - { is_reg8: true }
           - str_eq:
               left:
-                current: code
-                after_prefix: 'sub '
-                trim: true
+                current: instruction, operand1
+                lower: true
               right:
-                prev: { idx: 0, field: code }
-                after_prefix: 'ld '
-                before_comma: true
-                trim: true
+                prev: { idx: 0, field: 'instruction, operand1' }
+                lower: true
 
   py_a_eq_carry_pq:
     name: 'a = carry ? P : Q'
