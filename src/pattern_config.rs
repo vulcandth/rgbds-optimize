@@ -392,6 +392,7 @@ fn parse_string_field(s: &str) -> Result<crate::StringField, ConfigError> {
         "code" => Ok(crate::StringField::Code),
         "text" => Ok(crate::StringField::Text),
         "context" => Ok(crate::StringField::Context),
+        "label" => Ok(crate::StringField::Label),
         "comment" => Ok(crate::StringField::Comment),
         "comment_lower" => Ok(crate::StringField::CommentLower),
         other => Err(ConfigError::InvalidStringExpr(format!(

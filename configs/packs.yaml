@@ -425,11 +425,9 @@ patterns:
             operands:
               - { eq: a }
       - str_eq:
-          left: { current: code, strip_trailing_colon: true }
+          left: { current: label }
           right:
-            prev: { idx: 1, field: code }
-            after_comma: true
-            trim: true
+            prev: { idx: 1, field: 'instruction, operand1' }
 
   py_a_inc_dec_if_carry:
     name: a++|a-- if carry

@@ -674,6 +674,31 @@ fn is_rgbds_cc(op: &str) -> bool {
     matches!(op, "z" | "nz" | "c" | "nc")
 }
 
+fn is_control_flow_mnemonic_for_cc(mnemonic_lower: &str) -> bool {
+    matches!(mnemonic_lower, "jr" | "jp" | "jmp" | "call" | "ret")
+}
+
+fn instruction_cc_operand(ins: &Instruction) -> Option<&str> {
+    if !is_control_flow_mnemonic_for_cc(&ins.mnemonic) {
+        return None;
+    }
+
+    let first = ins.operand(0)?;
+    if is_rgbds_cc(first) {
+        Some(first)
+    } else {
+        None
+    }
+}
+
+fn instruction_effective_operands(ins: &Instruction) -> &[String] {
+    if instruction_cc_operand(ins).is_some() {
+        &ins.operands[1..]
+    } else {
+        &ins.operands[..]
+    }
+}
+
 fn parse_bracketed_operand(op: &str) -> Option<String> {
     let op = canonical_operand_for_kind_checks(op);
     let inner = op.strip_prefix('[')?.strip_suffix(']')?;
@@ -752,11 +777,11 @@ impl InstructionCondition {
             return false;
         }
 
-        // Condition-code (cc) checks: many jump instructions encode a cc
-        // as the first operand (e.g. `jr nz, LABEL`). Support instruction-level
-        // checks like `has_cc`, `cc_eq`, `cc_ne`, and `cc_in`.
-        let first_op = ins.operand(0).map(|s| s.to_string());
-        let cc_present = first_op.as_deref().map_or(false, |op| is_rgbds_cc(op));
+        // Condition-code (cc) checks: many control-flow instructions encode a cc
+        // as the first operand (e.g. `jr nz, LABEL`). Treat that cc as metadata,
+        // and do not confuse it with register operands like `ld c, a`.
+        let cc = instruction_cc_operand(&ins);
+        let cc_present = cc.is_some();
 
         if let Some(expect_has_cc) = &self.has_cc {
             if *expect_has_cc != cc_present {
@@ -768,7 +793,7 @@ impl InstructionCondition {
             if !cc_present {
                 return false;
             }
-            if !first_op.as_deref().map_or(false, |op| op.eq_ignore_ascii_case(want)) {
+            if !cc.is_some_and(|op| op.eq_ignore_ascii_case(want)) {
                 return false;
             }
         }
@@ -777,7 +802,7 @@ impl InstructionCondition {
             if !cc_present {
                 return false;
             }
-            if first_op.as_deref().map_or(false, |op| op.eq_ignore_ascii_case(want)) {
+            if cc.is_some_and(|op| op.eq_ignore_ascii_case(want)) {
                 return false;
             }
         }
@@ -786,20 +811,27 @@ impl InstructionCondition {
             if !cc_present {
                 return false;
             }
-            let cc = first_op.as_deref().unwrap_or("");
+            let cc = cc.unwrap_or("");
             if !list.iter().any(|x| x.eq_ignore_ascii_case(cc)) {
                 return false;
             }
         }
 
         if !self.operands.is_empty() {
-            if ins.operands.len() == self.operands.len() {
-                for (op, cond) in ins.operands.iter().zip(self.operands.iter()) {
+            // If the instruction uses a condition-code (cc) as the first operand
+            // (e.g. `jr nz, LABEL`), treat the cc as metadata and skip it when
+            // aligning the instruction's operands against the pattern's expected
+            // operands. This ensures `instruction, operand1` refers to the jump
+            // target rather than the cc.
+            let effective_ins_operands: &[String] = instruction_effective_operands(&ins);
+
+            if effective_ins_operands.len() == self.operands.len() {
+                for (op, cond) in effective_ins_operands.iter().zip(self.operands.iter()) {
                     if !cond.matches(op) {
                         return false;
                     }
                 }
-            } else if ins.operands.len() == 1 && self.operands.len() == 2 {
+            } else if effective_ins_operands.len() == 1 && self.operands.len() == 2 {
                 // Support implicit accumulator forms like `sub 1` == `sub a, 1` for
                 // common mnemonics that implicitly operate on `a`.
                 match ins.mnemonic.as_str() {
@@ -843,7 +875,7 @@ impl InstructionCondition {
 
                         // Only treat single-operand forms as implicit-`a` when the single
                         // operand is an immediate-like value (e.g. `1`, `$ff`, a symbol).
-                        let real_op = &ins.operands[0];
+                        let real_op = &effective_ins_operands[0];
                         if !is_rgbds_immediate_like(real_op) {
                             return false;
                         }
@@ -919,6 +951,7 @@ pub enum StringField {
     Context,
     Comment,
     CommentLower,
+    Label,
 
     InstructionMnemonic,
     InstructionOperand { idx: usize },
@@ -1058,28 +1091,75 @@ impl StringField {
 
             StringField::InstructionMnemonic => Some(parse_instruction(&line.code)?.mnemonic),
             StringField::InstructionOperand { idx } => {
-                parse_instruction(&line.code)?.operands.get(*idx).cloned()
+                let ins = parse_instruction(&line.code)?;
+                instruction_effective_operands(&ins).get(*idx).cloned()
             }
             StringField::InstructionCc => {
-                let instr = parse_instruction(&line.code)?;
-                let cc = instr.operand(0)?;
-                if is_rgbds_cc(cc) {
-                    Some(cc.to_string())
-                } else {
-                    None
-                }
+                let ins = parse_instruction(&line.code)?;
+                instruction_cc_operand(&ins).map(|s| s.to_string())
             }
             StringField::InstructionRoot => {
-                let instr = parse_instruction(&line.code)?;
-                let first = instr.operand(0)?;
-                if is_rgbds_cc(first) {
-                    instr.operand(1).map(|s| s.to_string())
-                } else {
-                    Some(first.to_string())
-                }
+                let ins = parse_instruction(&line.code)?;
+                instruction_effective_operands(&ins)
+                    .first()
+                    .map(|s| s.to_string())
             }
+            StringField::Label => extract_label_field(line).map(|s| s.to_string()),
         }
     }
+}
+
+fn extract_label_field(line: &Line) -> Option<&str> {
+    if let Some(lbl) = extract_leading_label(&line.code) {
+        return Some(lbl);
+    }
+
+    // RGBDS allows bare local labels like `.loop` (no trailing `:`).
+    // In practice these appear as a single, non-indented token on the line.
+    let code = line.code.as_str();
+    let is_non_indented = !line
+        .text
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_whitespace());
+    let is_single_token = !code.chars().any(|c| c.is_ascii_whitespace());
+
+    (is_non_indented && is_single_token && code.starts_with('.')).then_some(code)
+}
+
+fn extract_leading_label(code: &str) -> Option<&str> {
+    let code = code.trim_start();
+    if code.is_empty() {
+        return None;
+    }
+
+    let mut end = 0usize;
+    for (idx, ch) in code.char_indices() {
+        if ch.is_ascii_whitespace() {
+            end = idx;
+            break;
+        }
+    }
+    if end == 0 {
+        end = code.len();
+    }
+    let first_token = &code[..end];
+
+    if strip_label_token(first_token, &code[end..]).is_some() {
+        // trim trailing ':' or '::'
+        let lbl = first_token.trim_end_matches(':');
+        return Some(lbl);
+    }
+
+    if let Some(colon_idx) = first_token.find(':') {
+        let (maybe_label, after_colon) = first_token.split_at(colon_idx + 1);
+        if maybe_label.ends_with(':') && is_label_token(maybe_label) && !after_colon.is_empty() {
+            let lbl = maybe_label.trim_end_matches(':');
+            return Some(lbl);
+        }
+    }
+
+    None
 }
 
 fn split_after_comma(s: &str) -> Option<&str> {
@@ -1349,6 +1429,25 @@ mod tests {
             text: code.to_string(),
             context: String::new(),
         }
+    }
+
+    #[test]
+    fn label_field_recognizes_bare_local_labels() {
+        let line = Line {
+            num: 1,
+            code: ".okay".to_string(),
+            comment: String::new(),
+            comment_lower: String::new(),
+            text: ".okay".to_string(),
+            context: String::new(),
+        };
+
+        let expr = StringExpr {
+            base: StringBase::Current(StringField::Label),
+            transforms: Vec::new(),
+        };
+
+        assert_eq!(expr.eval(&line, &[]).as_deref(), Some(".okay"));
     }
 
     #[test]
@@ -1736,6 +1835,13 @@ mod tests {
             base: StringBase::Current(StringField::InstructionRoot),
             transforms: vec![],
         };
+
+        assert_eq!(cc.eval(&make_line("ld c, a"), &[]), None);
+        assert_eq!(root.eval(&make_line("ld c, a"), &[]), Some("c".into()));
+
+        // Condition codes are treated as instruction metadata, not operands.
+        assert_eq!(op1.eval(&make_line("jr nz, Foo"), &[]), Some("Foo".into()));
+        assert_eq!(op2.eval(&make_line("jr nz, Foo"), &[]), None);
 
         assert_eq!(cc.eval(&make_line("jr nz, Foo"), &[]), Some("nz".into()));
         assert_eq!(root.eval(&make_line("jr nz, Foo"), &[]), Some("Foo".into()));
