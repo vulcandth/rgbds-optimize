@@ -415,13 +415,38 @@ struct InstructionFullYaml {
 
     #[serde(default)]
     operands: Vec<OperandYaml>,
+    #[serde(default, alias = "is_cc")]
+    has_cc: Option<bool>,
+    #[serde(default)]
+    cc_eq: Option<String>,
+    #[serde(default)]
+    cc_ne: Option<String>,
+    #[serde(default)]
+    cc_in: Option<Vec<String>>,
+}
+
+#[derive(Clone, Default)]
+struct InstructionMeta {
+    has_cc: Option<bool>,
+    cc_eq: Option<String>,
+    cc_ne: Option<String>,
+    cc_in: Option<Vec<String>>,
 }
 
 impl InstructionYaml {
-    fn into_parts(self) -> (Option<String>, Vec<OperandYaml>) {
+    fn into_parts(self) -> (Option<String>, Vec<OperandYaml>, InstructionMeta) {
         match self {
-            InstructionYaml::Mnemonic(mnemonic) => (Some(mnemonic), Vec::new()),
-            InstructionYaml::Full(full) => (full.mnemonic, full.operands),
+            InstructionYaml::Mnemonic(mnemonic) => (Some(mnemonic), Vec::new(), InstructionMeta::default()),
+            InstructionYaml::Full(full) => (
+                full.mnemonic,
+                full.operands,
+                InstructionMeta {
+                    has_cc: full.has_cc,
+                    cc_eq: full.cc_eq,
+                    cc_ne: full.cc_ne,
+                    cc_in: full.cc_in,
+                },
+            ),
         }
     }
 }
@@ -441,13 +466,30 @@ struct InstructionInFullYaml {
 
     #[serde(default)]
     operands: Vec<OperandYaml>,
+    #[serde(default, alias = "is_cc")]
+    has_cc: Option<bool>,
+    #[serde(default)]
+    cc_eq: Option<String>,
+    #[serde(default)]
+    cc_ne: Option<String>,
+    #[serde(default)]
+    cc_in: Option<Vec<String>>,
 }
 
 impl InstructionInYaml {
-    fn into_parts(self) -> (Vec<String>, Vec<OperandYaml>) {
+    fn into_parts(self) -> (Vec<String>, Vec<OperandYaml>, InstructionMeta) {
         match self {
-            InstructionInYaml::Mnemonics(mnemonics) => (mnemonics, Vec::new()),
-            InstructionInYaml::Full(full) => (full.mnemonics, full.operands),
+            InstructionInYaml::Mnemonics(mnemonics) => (mnemonics, Vec::new(), InstructionMeta::default()),
+            InstructionInYaml::Full(full) => (
+                full.mnemonics,
+                full.operands,
+                InstructionMeta {
+                    has_cc: full.has_cc,
+                    cc_eq: full.cc_eq,
+                    cc_ne: full.cc_ne,
+                    cc_in: full.cc_in,
+                },
+            ),
         }
     }
 }
@@ -909,6 +951,10 @@ impl<'a> ConditionCompiler<'a> {
                     .into_iter()
                     .map(OperandYaml::into_runtime)
                     .collect::<Result<Vec<_>, _>>()?,
+                has_cc: None,
+                cc_eq: None,
+                cc_ne: None,
+                cc_in: None,
             }),
 
             ConditionYaml::InstructionInWithOperands {
@@ -933,6 +979,10 @@ impl<'a> ConditionCompiler<'a> {
                             StepCondition::Instruction(crate::InstructionCondition {
                                 mnemonic: Some(mnemonic),
                                 operands: operands.clone(),
+                                has_cc: None,
+                                cc_eq: None,
+                                cc_ne: None,
+                                cc_in: None,
                             })
                         })
                         .collect::<Vec<_>>(),
@@ -940,18 +990,23 @@ impl<'a> ConditionCompiler<'a> {
             }
 
             ConditionYaml::Instruction { instruction } => {
-                let (mnemonic, operands) = instruction.into_parts();
-                StepCondition::Instruction(crate::InstructionCondition {
+                let (mnemonic, operands, meta) = instruction.into_parts();
+                let icond = crate::InstructionCondition {
                     mnemonic,
                     operands: operands
                         .into_iter()
                         .map(OperandYaml::into_runtime)
                         .collect::<Result<Vec<_>, _>>()?,
-                })
+                    has_cc: meta.has_cc,
+                    cc_eq: meta.cc_eq,
+                    cc_ne: meta.cc_ne,
+                    cc_in: meta.cc_in,
+                };
+                StepCondition::Instruction(icond)
             }
 
             ConditionYaml::InstructionIn { instruction_in } => {
-                let (mnemonics, operands) = instruction_in.into_parts();
+                let (mnemonics, operands, meta) = instruction_in.into_parts();
                 if mnemonics.is_empty() {
                     return Err(ConfigError::InvalidInstruction(
                         "instruction_in must include at least one mnemonic".to_string(),
@@ -970,6 +1025,10 @@ impl<'a> ConditionCompiler<'a> {
                             StepCondition::Instruction(crate::InstructionCondition {
                                 mnemonic: Some(mnemonic),
                                 operands: operands.clone(),
+                                has_cc: meta.has_cc.clone(),
+                                cc_eq: meta.cc_eq.clone(),
+                                cc_ne: meta.cc_ne.clone(),
+                                cc_in: meta.cc_in.clone(),
                             })
                         })
                         .collect::<Vec<_>>(),

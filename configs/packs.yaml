@@ -408,13 +408,22 @@ patterns:
     name: 'a = carry ? P : Q'
     description: "Bad: ld a, P / jr c|nc, .ok / ld a, Q / .ok. Bad: ld a, P / jr c|nc, .ok / xor|inc|dec a / .ok. Good: solutions involving sbc a"
     steps:
-      - regex: LD_A_IMM
-      - regex: JUMP_NC_OR_C
+      - instruction: ld
+        operands:
+          - { eq: a }
+          - { is_imm: true }
+      - instruction_in:
+          mnemonics: [jr, jp]
+          cc_in: [c, nc]
       - any:
-          - { regex: LD_A_IMM }
-          - { code_eq: 'xor a' }
-          - { code_eq: 'inc a' }
-          - { code_eq: 'dec a' }
+          - instruction: ld
+            operands:
+              - { eq: a }
+              - { is_imm: true }
+          - instruction_in:
+              mnemonics: [xor, inc, dec]
+            operands:
+              - { eq: a }
       - str_eq:
           left: { current: code, strip_trailing_colon: true }
           right:

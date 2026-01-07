@@ -553,6 +553,10 @@ pub enum StepCondition {
 pub struct InstructionCondition {
     pub mnemonic: Option<String>,
     pub operands: Vec<OperandCondition>,
+    pub has_cc: Option<bool>,
+    pub cc_eq: Option<String>,
+    pub cc_ne: Option<String>,
+    pub cc_in: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -746,6 +750,46 @@ impl InstructionCondition {
             && ins.mnemonic != mnemonic.to_ascii_lowercase()
         {
             return false;
+        }
+
+        // Condition-code (cc) checks: many jump instructions encode a cc
+        // as the first operand (e.g. `jr nz, LABEL`). Support instruction-level
+        // checks like `has_cc`, `cc_eq`, `cc_ne`, and `cc_in`.
+        let first_op = ins.operand(0).map(|s| s.to_string());
+        let cc_present = first_op.as_deref().map_or(false, |op| is_rgbds_cc(op));
+
+        if let Some(expect_has_cc) = &self.has_cc {
+            if *expect_has_cc != cc_present {
+                return false;
+            }
+        }
+
+        if let Some(want) = &self.cc_eq {
+            if !cc_present {
+                return false;
+            }
+            if !first_op.as_deref().map_or(false, |op| op.eq_ignore_ascii_case(want)) {
+                return false;
+            }
+        }
+
+        if let Some(want) = &self.cc_ne {
+            if !cc_present {
+                return false;
+            }
+            if first_op.as_deref().map_or(false, |op| op.eq_ignore_ascii_case(want)) {
+                return false;
+            }
+        }
+
+        if let Some(list) = &self.cc_in {
+            if !cc_present {
+                return false;
+            }
+            let cc = first_op.as_deref().unwrap_or("");
+            if !list.iter().any(|x| x.eq_ignore_ascii_case(cc)) {
+                return false;
+            }
         }
 
         if !self.operands.is_empty() {
@@ -1569,6 +1613,10 @@ mod tests {
                 OperandCondition::Eq("a".into()),
                 OperandCondition::CanonEq("[hli]".into()),
             ],
+            has_cc: None,
+            cc_eq: None,
+            cc_ne: None,
+            cc_in: None,
         });
         assert!(canonical.matches(&make_line("LD a, [hl+]"), &[]));
 
@@ -1578,12 +1626,20 @@ mod tests {
                 OperandCondition::Eq("b".into()),
                 OperandCondition::Any(vec![OperandCondition::IsZeroLiteral]),
             ],
+            has_cc: None,
+            cc_eq: None,
+            cc_ne: None,
+            cc_in: None,
         });
         assert!(zero_literal.matches(&make_line("ld b, 0"), &[]));
 
         let wrong_count = StepCondition::Instruction(InstructionCondition {
             mnemonic: Some("ld".into()),
             operands: vec![OperandCondition::Eq("b".into())],
+            has_cc: None,
+            cc_eq: None,
+            cc_ne: None,
+            cc_in: None,
         });
         assert!(!wrong_count.matches(&make_line("ld b, 0"), &[]));
 
@@ -1593,6 +1649,10 @@ mod tests {
                 OperandCondition::Eq("a".into()),
                 OperandCondition::AnyOperand,
             ],
+            has_cc: None,
+            cc_eq: None,
+            cc_ne: None,
+            cc_in: None,
         });
         assert!(wildcard_second_operand.matches(&make_line("add a, b"), &[]));
         assert!(wildcard_second_operand.matches(&make_line("ADD a, $12"), &[]));
