@@ -62,42 +62,397 @@ pub fn parse_instruction(code: &str) -> Option<Instruction> {
         return None;
     }
 
-    let (mnemonic_raw, rest) = match code.split_once(' ') {
-        Some((m, r)) => (m, r.trim()),
-        None => (code, ""),
-    };
+    // `Line::code` is comment-stripped for `;` comments, but RGBASM also supports block
+    // comments `/* ... */` anywhere in a line. Strip those before parsing.
+    let code = strip_rgbasm_block_comments(code);
+    let code = code.trim();
+    if code.is_empty() {
+        return None;
+    }
 
+    // RGBASM syntax allows optional leading labels (`Label:` or `.loop:`) before an
+    // instruction on the same line.
+    let code = strip_leading_label(code);
+    let code = code.trim();
+    if code.is_empty() {
+        return None;
+    }
+
+    // RGBASM allows multiple instructions on one line separated by `::`.
+    // For instruction matching we consider only the first instruction segment.
+    let code = first_instruction_segment(code);
+    let code = code.trim();
+    if code.is_empty() {
+        return None;
+    }
+
+    let (mnemonic_raw, rest) = split_mnemonic_and_rest(code);
     let mnemonic = mnemonic_raw.to_ascii_lowercase();
+
+    // A leading `#` denotes a raw identifier (escaped keyword). That cannot be an
+    // instruction mnemonic.
+    if mnemonic.starts_with('#') {
+        return None;
+    }
+
+    if !is_gbz80_mnemonic(&mnemonic) {
+        return None;
+    }
+
     let operands = if rest.is_empty() {
         Vec::new()
     } else {
         split_operands(rest)
             .into_iter()
-            .map(|op| op.trim().to_string())
+            .map(|op| op.trim())
             .filter(|op| !op.is_empty())
+            .map(str::to_string)
             .collect()
     };
 
     Some(Instruction { mnemonic, operands })
 }
 
+fn is_gbz80_mnemonic(mnemonic_lower: &str) -> bool {
+    // Mnemonics per gbz80(7). This intentionally excludes directives and user macros.
+    matches!(
+        mnemonic_lower,
+        "adc"
+            | "add"
+            | "and"
+            | "bit"
+            | "call"
+            | "ccf"
+            | "cp"
+            | "cpl"
+            | "daa"
+            | "dec"
+            | "di"
+            | "ei"
+            | "halt"
+            | "inc"
+            | "jp"
+            | "jr"
+            | "ld"
+            | "ldh"
+            | "nop"
+            | "or"
+            | "pop"
+            | "push"
+            | "res"
+            | "ret"
+            | "reti"
+            | "rl"
+            | "rla"
+            | "rlc"
+            | "rlca"
+            | "rr"
+            | "rra"
+            | "rrc"
+            | "rrca"
+            | "rst"
+            | "sbc"
+            | "scf"
+            | "set"
+            | "sla"
+            | "sra"
+            | "srl"
+            | "stop"
+            | "sub"
+            | "swap"
+            | "xor"
+    )
+}
+
+fn split_mnemonic_and_rest(code: &str) -> (&str, &str) {
+    // Split by the first whitespace. `Line::code` already normalizes whitespace,
+    // but keep this robust for callers using raw strings.
+    for (idx, ch) in code.char_indices() {
+        if ch.is_ascii_whitespace() {
+            let mnemonic = &code[..idx];
+            let rest = code[idx..].trim();
+            return (mnemonic, rest);
+        }
+    }
+    (code, "")
+}
+
+fn strip_leading_label(code: &str) -> &str {
+    // RGBASM line layout allows: `[label:] instruction`.
+    // Our preprocessor may preserve label-only lines as `Label:`.
+    let code = code.trim_start();
+    if code.is_empty() {
+        return code;
+    }
+
+    let mut end = 0usize;
+    for (idx, ch) in code.char_indices() {
+        if ch.is_ascii_whitespace() {
+            end = idx;
+            break;
+        }
+    }
+    if end == 0 {
+        end = code.len();
+    }
+    let first_token = &code[..end];
+
+    // Common/valid label tokens:
+    // - `Foo:`
+    // - `Foo::`
+    // - `.loop:`
+    // Also accept the no-whitespace form `Foo:ld a, b` defensively.
+    if let Some(rest) = strip_label_token(first_token, &code[end..]) {
+        return rest;
+    }
+
+    if let Some(colon_idx) = first_token.find(':') {
+        let (maybe_label, after_colon) = first_token.split_at(colon_idx + 1);
+        if maybe_label.ends_with(':') && is_label_token(maybe_label) && !after_colon.is_empty() {
+            return &code[colon_idx + 1..];
+        }
+    }
+
+    code
+}
+
+fn strip_label_token<'a>(token: &str, rest_after_token: &'a str) -> Option<&'a str> {
+    if !is_label_token(token) {
+        return None;
+    }
+    Some(rest_after_token)
+}
+
+fn is_label_token(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    let starts_ok = token
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '.');
+    if !starts_ok {
+        return false;
+    }
+    token.ends_with(':') || token.ends_with("::")
+}
+
+fn first_instruction_segment(code: &str) -> &str {
+    // Split on the first top-level `::` (instruction separator).
+    // Avoid splitting inside strings, block comments, parentheses/brackets/braces.
+    let bytes = code.as_bytes();
+    let mut i = 0usize;
+    let mut bracket_depth: i32 = 0;
+    let mut paren_depth: i32 = 0;
+    let mut brace_depth: i32 = 0;
+    let mut in_string: Option<u8> = None;
+    let mut string_is_raw = false;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+
+        if in_string.is_some() {
+            if !string_is_raw && b == b'\\' {
+                i = (i + 2).min(bytes.len());
+                continue;
+            }
+            if Some(b) == in_string {
+                in_string = None;
+                string_is_raw = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        // Block comments.
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < bytes.len() {
+                if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        if b == b'#' && i + 1 < bytes.len() && bytes[i + 1] == b'"' {
+            in_string = Some(b'"');
+            string_is_raw = true;
+            i += 2;
+            continue;
+        }
+        if b == b'"' || b == b'\'' {
+            in_string = Some(b);
+            string_is_raw = false;
+            i += 1;
+            continue;
+        }
+
+        match b {
+            b'[' => bracket_depth += 1,
+            b']' => bracket_depth -= 1,
+            b'(' => paren_depth += 1,
+            b')' => paren_depth -= 1,
+            b'{' => brace_depth += 1,
+            b'}' => brace_depth -= 1,
+            b':'
+                if bracket_depth == 0
+                    && paren_depth == 0
+                    && brace_depth == 0
+                    && i + 1 < bytes.len()
+                    && bytes[i + 1] == b':' =>
+            {
+                return &code[..i];
+            }
+            _ => {}
+        }
+
+        i += 1;
+    }
+
+    code
+}
+
+fn strip_rgbasm_block_comments(code: &str) -> String {
+    // Strip `/* ... */` comment spans, preserving string literals.
+    // This is line-local; multi-line block comments will be handled per-line.
+    let bytes = code.as_bytes();
+    let mut out = String::with_capacity(code.len());
+    let mut i = 0usize;
+    let mut in_string: Option<u8> = None;
+    let mut string_is_raw = false;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+
+        if in_string.is_some() {
+            out.push(b as char);
+
+            if !string_is_raw && b == b'\\' && i + 1 < bytes.len() {
+                out.push(bytes[i + 1] as char);
+                i += 2;
+                continue;
+            }
+            if Some(b) == in_string {
+                in_string = None;
+                string_is_raw = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if b == b'#' && i + 1 < bytes.len() && bytes[i + 1] == b'"' {
+            out.push('#');
+            out.push('"');
+            in_string = Some(b'"');
+            string_is_raw = true;
+            i += 2;
+            continue;
+        }
+        if b == b'"' || b == b'\'' {
+            out.push(b as char);
+            in_string = Some(b);
+            string_is_raw = false;
+            i += 1;
+            continue;
+        }
+
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            // Replace the entire comment span with a single space to keep tokens separated.
+            out.push(' ');
+            i += 2;
+            while i + 1 < bytes.len() {
+                if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        out.push(b as char);
+        i += 1;
+    }
+
+    out
+}
+
 fn split_operands(s: &str) -> Vec<&str> {
-    // Split by commas, but keep bracketed expressions intact.
-    // This is intentionally minimal: it does not attempt to parse strings or macros.
+    // Split by commas, but keep bracket/paren/brace/string constructs intact.
+    // This is designed to match RGBASM operand syntax well enough for pattern matching,
+    // not to fully parse expressions.
     let mut out = Vec::new();
-    let mut depth: i32 = 0;
+    let mut bracket_depth: i32 = 0;
+    let mut paren_depth: i32 = 0;
+    let mut brace_depth: i32 = 0;
+    let mut in_string: Option<u8> = None;
+    let mut string_is_raw = false;
     let mut start = 0usize;
-    for (i, ch) in s.char_indices() {
-        match ch {
-            '[' => depth += 1,
-            ']' => depth -= 1,
-            ',' if depth == 0 => {
+
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+
+        if in_string.is_some() {
+            if !string_is_raw && b == b'\\' {
+                i = (i + 2).min(bytes.len());
+                continue;
+            }
+            if Some(b) == in_string {
+                in_string = None;
+                string_is_raw = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        // Skip block comments entirely.
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < bytes.len() {
+                if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        if b == b'#' && i + 1 < bytes.len() && bytes[i + 1] == b'"' {
+            in_string = Some(b'"');
+            string_is_raw = true;
+            i += 2;
+            continue;
+        }
+        if b == b'"' || b == b'\'' {
+            in_string = Some(b);
+            string_is_raw = false;
+            i += 1;
+            continue;
+        }
+
+        match b {
+            b'[' => bracket_depth += 1,
+            b']' => bracket_depth -= 1,
+            b'(' => paren_depth += 1,
+            b')' => paren_depth -= 1,
+            b'{' => brace_depth += 1,
+            b'}' => brace_depth -= 1,
+            b',' if bracket_depth == 0 && paren_depth == 0 && brace_depth == 0 => {
                 out.push(&s[start..i]);
                 start = i + 1;
             }
             _ => {}
         }
+
+        i += 1;
     }
+
     out.push(&s[start..]);
     out
 }
@@ -107,14 +462,15 @@ pub fn canonicalize_rgbds_operand(op: &str) -> String {
     // Keep this conservative; expand later as patterns require.
     let lowered = op.trim().to_ascii_lowercase();
 
-    // RGBDS is fairly permissive about whitespace; make bracketed operands robust.
-    let lowered = if lowered.starts_with('[') && lowered.ends_with(']') {
+    // RGBASM is permissive about whitespace. For structural comparisons, remove
+    // ASCII whitespace outside of string/char literals.
+    let lowered = if lowered.contains('"') || lowered.contains('\'') {
+        lowered
+    } else {
         lowered
             .chars()
             .filter(|c| !c.is_ascii_whitespace())
             .collect()
-    } else {
-        lowered
     };
 
     match lowered.as_str() {
@@ -205,7 +561,24 @@ pub enum OperandCondition {
     Eq(String),
     CanonEq(String),
     IsZeroLiteral,
+    IsReg8,
+    IsReg16,
+    IsReg16Stack,
+    IsCc,
+    IsMem,
+    IsMemHl,
+    IsMemHli,
+    IsMemHld,
+    IsMemR16,
+    IsMemC,
+    IsImm,
+    IsNumberLiteral,
+    IsU3Literal,
+    IsRstVecLiteral,
+    AnyOperand,
     Any(Vec<OperandCondition>),
+    All(Vec<OperandCondition>),
+    Not(Box<OperandCondition>),
 }
 
 impl OperandCondition {
@@ -214,8 +587,119 @@ impl OperandCondition {
             OperandCondition::Eq(want) => operand.eq_ignore_ascii_case(want),
             OperandCondition::CanonEq(want) => canonicalize_rgbds_operand(operand) == *want,
             OperandCondition::IsZeroLiteral => is_rgbds_zero_literal(operand),
+            OperandCondition::IsReg8 => is_rgbds_reg8(operand),
+            OperandCondition::IsReg16 => is_rgbds_reg16(operand),
+            OperandCondition::IsReg16Stack => is_rgbds_reg16_stack(operand),
+            OperandCondition::IsCc => is_rgbds_cc(operand),
+            OperandCondition::IsMem => is_rgbds_mem_any(operand),
+            OperandCondition::IsMemHl => is_rgbds_mem_hl(operand),
+            OperandCondition::IsMemHli => is_rgbds_mem_hli(operand),
+            OperandCondition::IsMemHld => is_rgbds_mem_hld(operand),
+            OperandCondition::IsMemR16 => is_rgbds_mem_r16(operand),
+            OperandCondition::IsMemC => is_rgbds_mem_c(operand),
+            OperandCondition::IsImm => is_rgbds_immediate_like(operand),
+            OperandCondition::IsNumberLiteral => parse_rgbds_int(operand).is_some(),
+            OperandCondition::IsU3Literal => is_rgbds_u3_literal(operand),
+            OperandCondition::IsRstVecLiteral => is_rgbds_rst_vec_literal(operand),
+            OperandCondition::AnyOperand => true,
             OperandCondition::Any(options) => options.iter().any(|opt| opt.matches(operand)),
+            OperandCondition::All(conds) => conds.iter().all(|cond| cond.matches(operand)),
+            OperandCondition::Not(cond) => !cond.matches(operand),
         }
+    }
+}
+
+fn operand_token_lower_no_space(op: &str) -> String {
+    let no_space: String = op.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    no_space.to_ascii_lowercase()
+}
+
+fn canonical_operand_for_kind_checks(op: &str) -> String {
+    // Kind checks are deliberately lexical and conservative.
+    // Remove ASCII whitespace; keep everything else.
+    operand_token_lower_no_space(op.trim())
+}
+
+fn is_rgbds_reg8(op: &str) -> bool {
+    matches!(canonical_operand_for_kind_checks(op).as_str(), "a" | "b" | "c" | "d" | "e" | "h" | "l")
+}
+
+fn is_rgbds_reg16(op: &str) -> bool {
+    matches!(
+        canonical_operand_for_kind_checks(op).as_str(),
+        "bc" | "de" | "hl" | "sp"
+    )
+}
+
+fn is_rgbds_reg16_stack(op: &str) -> bool {
+    matches!(
+        canonical_operand_for_kind_checks(op).as_str(),
+        "af" | "bc" | "de" | "hl"
+    )
+}
+
+fn is_rgbds_cc(op: &str) -> bool {
+    let op = canonical_operand_for_kind_checks(op);
+    let op = op.strip_prefix('!').unwrap_or(op.as_str());
+    matches!(op, "z" | "nz" | "c" | "nc")
+}
+
+fn parse_bracketed_operand(op: &str) -> Option<String> {
+    let op = canonical_operand_for_kind_checks(op);
+    let inner = op.strip_prefix('[')?.strip_suffix(']')?;
+    Some(inner.to_string())
+}
+
+fn is_rgbds_mem_any(op: &str) -> bool {
+    parse_bracketed_operand(op).is_some()
+}
+
+fn is_rgbds_mem_hl(op: &str) -> bool {
+    matches!(parse_bracketed_operand(op).as_deref(), Some("hl"))
+}
+
+fn is_rgbds_mem_hli(op: &str) -> bool {
+    matches!(
+        parse_bracketed_operand(op).as_deref(),
+        Some("hli") | Some("hl+")
+    )
+}
+
+fn is_rgbds_mem_hld(op: &str) -> bool {
+    matches!(
+        parse_bracketed_operand(op).as_deref(),
+        Some("hld") | Some("hl-")
+    )
+}
+
+fn is_rgbds_mem_r16(op: &str) -> bool {
+    matches!(parse_bracketed_operand(op).as_deref(), Some("bc") | Some("de") | Some("hl"))
+}
+
+fn is_rgbds_mem_c(op: &str) -> bool {
+    matches!(parse_bracketed_operand(op).as_deref(), Some("c"))
+}
+
+fn is_rgbds_immediate_like(op: &str) -> bool {
+    // "Immediate" here means "not a register and not a bracketed memory reference".
+    // This is intentionally permissive: symbols and expressions count as immediates.
+    if op.trim().is_empty() {
+        return false;
+    }
+    !is_rgbds_reg8(op) && !is_rgbds_reg16(op) && !is_rgbds_reg16_stack(op) && !is_rgbds_cc(op) && !is_rgbds_mem_any(op)
+}
+
+fn is_rgbds_u3_literal(op: &str) -> bool {
+    match parse_rgbds_int(op) {
+        Some(v) => (0..=7).contains(&v),
+        None => false,
+    }
+}
+
+fn is_rgbds_rst_vec_literal(op: &str) -> bool {
+    match parse_rgbds_int(op) {
+        Some(v) => matches!(v, 0x00 | 0x08 | 0x10 | 0x18 | 0x20 | 0x28 | 0x30 | 0x38),
+        None => false,
     }
 }
 
@@ -300,6 +784,11 @@ pub enum StringField {
     Context,
     Comment,
     CommentLower,
+
+    InstructionMnemonic,
+    InstructionOperand { idx: usize },
+    InstructionCc,
+    InstructionRoot,
 }
 
 #[derive(Clone, Debug)]
@@ -323,6 +812,7 @@ pub enum StringTransform {
     StripTrailingColon,
     SymbolLike,
     Trim,
+    Lower,
 }
 
 #[derive(Clone, Debug)]
@@ -334,8 +824,8 @@ pub struct StringExpr {
 impl StringExpr {
     pub fn eval<'a>(&self, current: &'a Line, prev: &'a [Line]) -> Option<String> {
         let mut s: String = match &self.base {
-            StringBase::Current(field) => field.get(current).to_string(),
-            StringBase::Prev { idx, field } => field.get(prev.get(*idx)?).to_string(),
+            StringBase::Current(field) => field.eval(current)?,
+            StringBase::Prev { idx, field } => field.eval(prev.get(*idx)?)?,
             StringBase::Const(value) => value.clone(),
         };
 
@@ -412,6 +902,9 @@ impl StringExpr {
                 StringTransform::Trim => {
                     s = s.trim().to_string();
                 }
+                StringTransform::Lower => {
+                    s = s.to_ascii_lowercase();
+                }
             }
         }
 
@@ -420,13 +913,36 @@ impl StringExpr {
 }
 
 impl StringField {
-    fn get<'a>(&self, line: &'a Line) -> &'a str {
+    fn eval(&self, line: &Line) -> Option<String> {
         match self {
-            StringField::Code => &line.code,
-            StringField::Text => &line.text,
-            StringField::Context => &line.context,
-            StringField::Comment => &line.comment,
-            StringField::CommentLower => &line.comment_lower,
+            StringField::Code => Some(line.code.clone()),
+            StringField::Text => Some(line.text.clone()),
+            StringField::Context => Some(line.context.clone()),
+            StringField::Comment => Some(line.comment.clone()),
+            StringField::CommentLower => Some(line.comment_lower.clone()),
+
+            StringField::InstructionMnemonic => Some(parse_instruction(&line.code)?.mnemonic),
+            StringField::InstructionOperand { idx } => {
+                parse_instruction(&line.code)?.operands.get(*idx).cloned()
+            }
+            StringField::InstructionCc => {
+                let instr = parse_instruction(&line.code)?;
+                let cc = instr.operand(0)?;
+                if is_rgbds_cc(cc) {
+                    Some(cc.to_string())
+                } else {
+                    None
+                }
+            }
+            StringField::InstructionRoot => {
+                let instr = parse_instruction(&line.code)?;
+                let first = instr.operand(0)?;
+                if is_rgbds_cc(first) {
+                    instr.operand(1).map(|s| s.to_string())
+                } else {
+                    Some(first.to_string())
+                }
+            }
         }
     }
 }
@@ -815,6 +1331,77 @@ mod tests {
     }
 
     #[test]
+    fn parse_instruction_returns_none_for_label_only_or_directive() {
+        assert!(parse_instruction("Label:").is_none());
+        assert!(parse_instruction(".loop:").is_none());
+        assert!(parse_instruction("db 1, 2, 3").is_none());
+        assert!(parse_instruction("SECTION \"X\", ROM0").is_none());
+        assert!(parse_instruction("my_macro 1, 2").is_none());
+    }
+
+    #[test]
+    fn parse_instruction_accepts_label_then_instruction_same_line() {
+        let ins = parse_instruction("Label: ld a, [hli]").unwrap();
+        assert_eq!(ins.mnemonic, "ld");
+        assert_eq!(ins.operands, vec!["a".to_string(), "[hli]".to_string()]);
+    }
+
+    #[test]
+    fn parse_instruction_ignores_block_comments_and_double_colon_chaining() {
+        let ins = parse_instruction("ld a, /*x*/ [hl+] :: nop").unwrap();
+        assert_eq!(ins.mnemonic, "ld");
+        assert_eq!(ins.operands, vec!["a".to_string(), "[hl+]".to_string()]);
+    }
+
+    #[test]
+    fn split_operands_does_not_split_inside_parentheses() {
+        let ins = parse_instruction("ld a, (LOW(foo, bar))");
+        // `LOW` doesn't take 2 args in rgbasm, but operand splitting should remain robust.
+        let ins = ins.unwrap();
+        assert_eq!(ins.operands.len(), 2);
+        assert_eq!(ins.operands[1], "(LOW(foo, bar))");
+    }
+
+    #[test]
+    fn operand_kind_checks_cover_registers_cc_memory_and_immediates() {
+        assert!(OperandCondition::IsReg8.matches("A"));
+        assert!(OperandCondition::IsReg8.matches(" l "));
+        assert!(!OperandCondition::IsReg8.matches("hl"));
+
+        assert!(OperandCondition::IsReg16.matches("HL"));
+        assert!(OperandCondition::IsReg16.matches("sp"));
+        assert!(!OperandCondition::IsReg16.matches("af"));
+
+        assert!(OperandCondition::IsReg16Stack.matches("AF"));
+        assert!(OperandCondition::IsReg16Stack.matches("hl"));
+        assert!(!OperandCondition::IsReg16Stack.matches("sp"));
+
+        assert!(OperandCondition::IsCc.matches("z"));
+        assert!(OperandCondition::IsCc.matches("NZ"));
+        assert!(OperandCondition::IsCc.matches("!c"));
+        assert!(!OperandCondition::IsCc.matches("po"));
+
+        assert!(OperandCondition::IsMem.matches("[hl]"));
+        assert!(OperandCondition::IsMemHl.matches("[ HL ]"));
+        assert!(OperandCondition::IsMemHli.matches("[hl+]"));
+        assert!(OperandCondition::IsMemHli.matches("[hli]"));
+        assert!(OperandCondition::IsMemHld.matches("[hl-]"));
+        assert!(OperandCondition::IsMemR16.matches("[bc]"));
+        assert!(OperandCondition::IsMemC.matches("[c]"));
+        assert!(!OperandCondition::IsMemC.matches("c"));
+
+        assert!(OperandCondition::IsImm.matches("$1234"));
+        assert!(OperandCondition::IsImm.matches("SomeLabel"));
+        assert!(!OperandCondition::IsImm.matches("[hl]"));
+
+        assert!(OperandCondition::IsNumberLiteral.matches("%111"));
+        assert!(OperandCondition::IsU3Literal.matches("7"));
+        assert!(!OperandCondition::IsU3Literal.matches("8"));
+        assert!(OperandCondition::IsRstVecLiteral.matches("$38"));
+        assert!(!OperandCondition::IsRstVecLiteral.matches("$30+8"));
+    }
+
+    #[test]
     fn canonicalize_rgbds_operand_normalizes_hl_autoinc_and_autodec() {
         assert_eq!(canonicalize_rgbds_operand("[hl+]"), "[hli]");
         assert_eq!(canonicalize_rgbds_operand("[hli]"), "[hli]");
@@ -902,6 +1489,14 @@ mod tests {
             operands: vec![OperandCondition::Eq("b".into())],
         });
         assert!(!wrong_count.matches(&make_line("ld b, 0"), &[]));
+
+        let wildcard_second_operand = StepCondition::Instruction(InstructionCondition {
+            mnemonic: Some("add".into()),
+            operands: vec![OperandCondition::Eq("a".into()), OperandCondition::AnyOperand],
+        });
+        assert!(wildcard_second_operand.matches(&make_line("add a, b"), &[]));
+        assert!(wildcard_second_operand.matches(&make_line("ADD a, $12"), &[]));
+        assert!(!wildcard_second_operand.matches(&make_line("add a"), &[]));
     }
 
     #[test]
@@ -958,5 +1553,51 @@ mod tests {
             symbol.eval(&make_line("Label::"), &[]),
             Some("Label".to_string())
         );
+    }
+
+    #[test]
+    fn string_expr_supports_instruction_operands_cc_and_root() {
+        let op1 = StringExpr {
+            base: StringBase::Current(StringField::InstructionOperand { idx: 0 }),
+            transforms: vec![],
+        };
+        let op2 = StringExpr {
+            base: StringBase::Current(StringField::InstructionOperand { idx: 1 }),
+            transforms: vec![],
+        };
+        assert_eq!(op1.eval(&make_line("ld b, b"), &[]), Some("b".into()));
+        assert_eq!(op2.eval(&make_line("ld b, b"), &[]), Some("b".into()));
+
+        let cc = StringExpr {
+            base: StringBase::Current(StringField::InstructionCc),
+            transforms: vec![],
+        };
+        let root = StringExpr {
+            base: StringBase::Current(StringField::InstructionRoot),
+            transforms: vec![],
+        };
+
+        assert_eq!(cc.eval(&make_line("jr nz, Foo"), &[]), Some("nz".into()));
+        assert_eq!(root.eval(&make_line("jr nz, Foo"), &[]), Some("Foo".into()));
+
+        assert_eq!(cc.eval(&make_line("jr Foo"), &[]), None);
+        assert_eq!(root.eval(&make_line("jr Foo"), &[]), Some("Foo".into()));
+
+        assert_eq!(cc.eval(&make_line("ret z"), &[]), Some("z".into()));
+        assert_eq!(root.eval(&make_line("ret z"), &[]), None);
+
+        let op1_lower = StringExpr {
+            base: StringBase::Current(StringField::InstructionOperand { idx: 0 }),
+            transforms: vec![StringTransform::Lower],
+        };
+        let op2_lower = StringExpr {
+            base: StringBase::Current(StringField::InstructionOperand { idx: 1 }),
+            transforms: vec![StringTransform::Lower],
+        };
+        let cond = StepCondition::StrEq {
+            left: op1_lower,
+            right: op2_lower,
+        };
+        assert!(cond.matches(&make_line("ld a, A"), &[]));
     }
 }

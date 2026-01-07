@@ -2,7 +2,6 @@
 # This file is intentionally user-editable; regexes are compiled once at startup.
 
 regexes:
-  REDUNDANT_ARGUMENTS: '^(?:add|adc|sub|sbc|and|xor|or|cp) a,'
   NO_OP_LD_PY: '^ld ([abcdehl]), \1$'
   NO_OP_ADD_SUB: '^(?:add|sub) (?:a, )?(?:[%$&]?0+|FALSE)$'
   INEFFICIENT_HRAM_LOAD: '^ld a, \[[hr][^l]'
@@ -275,33 +274,56 @@ patterns:
     name: Redundant arguments
     description: "Bad: add a, X (or other arithmetic|logic operators). Good: add X"
     steps:
-      - regex: REDUNDANT_ARGUMENTS
+      - instruction_in:
+          mnemonics: [add, adc, sub, sbc, and, xor, or, cp]
+          operands:
+            - { eq: a }
+            - { any_operand: true }
 
   py_nops:
     name: nops
     description: "Bad: nop. Good: omit (unless you need it for timing or halt)"
     steps:
-      - code_ne: halt
-      - code_eq: nop
+      - not:
+          instruction: halt
+      - instruction: nop
 
   py_no_op_ld:
     name: No-op ld
     description: "Bad: ld b, b (or other identical registers). Good: omit (unless you need it for timing)"
     steps:
-      - regex: NO_OP_LD_PY
+      - all:
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { is_reg8: true }
+                - { is_reg8: true }
+          - str_eq:
+              left: { current: 'instruction, operand1', lower: true }
+              right: { current: 'instruction, operand2', lower: true }
 
   py_no_op_add_sub:
     name: No-op add|sub
     description: "Bad: add|sub 0. Good: omit (unless you need the flag effects)"
     steps:
-      - regex: NO_OP_ADD_SUB
+      - instruction_in:
+          mnemonics: [add, sub]
+          operands:
+            - { is_zero_literal: true }
 
   py_inefficient_hram_load:
     name: Inefficient HRAM load
     description: "Bad: ld a, [hFoo] (or [rFoo]). Good: ldh a, [hFoo]"
     steps:
       - all:
-          - { regex: INEFFICIENT_HRAM_LOAD }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: a }
+                - { is_mem: true, is_mem_r16: false, is_mem_hli: false, is_mem_hld: false }
+          - str_eq_in:
+              left: { current: 'instruction, operand2', lower: true, byte_at: 1 }
+              rights: ['h', 'r']
           - not: is_bank_reg_symbol
 
   py_inefficient_hram_store:
@@ -309,8 +331,14 @@ patterns:
     description: "Bad: ld [hFoo], a (or [rFoo]). Good: ldh [hFoo], a"
     steps:
       - all:
-          - { regex: INEFFICIENT_HRAM_STORE }
-          - { code_ends_with: ', a' }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { is_mem: true, is_mem_r16: false, is_mem_hli: false, is_mem_hld: false }
+                - { eq: a }
+          - str_eq_in:
+              left: { current: 'instruction, operand1', lower: true, byte_at: 1 }
+              rights: ['h', 'r']
           - not: is_bank_reg_symbol
 
   py_a_eq_0:

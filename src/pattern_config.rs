@@ -35,6 +35,7 @@ pub enum ConfigError {
         err: fancy_regex::Error,
     },
     InvalidOperand(String),
+    InvalidInstruction(String),
     UnknownCondition(String),
     ConditionCycle(String),
     InvalidStringExpr(String),
@@ -53,6 +54,7 @@ impl std::fmt::Display for ConfigError {
             ConfigError::UnknownRegex(name) => write!(f, "unknown regex '{name}'"),
             ConfigError::InvalidRegex { name, err } => write!(f, "invalid regex '{name}': {err}"),
             ConfigError::InvalidOperand(msg) => write!(f, "invalid operand condition: {msg}"),
+            ConfigError::InvalidInstruction(msg) => write!(f, "invalid instruction condition: {msg}"),
             ConfigError::UnknownCondition(name) => write!(f, "unknown condition '{name}'"),
             ConfigError::ConditionCycle(name) => {
                 write!(f, "condition '{name}' forms a cycle")
@@ -179,8 +181,30 @@ enum ConditionYaml {
     Not {
         not: Box<ConditionYaml>,
     },
+
+    /// Shorthand for:
+    /// `instruction: { mnemonic: <string>, operands: [...] }`
+    InstructionWithOperands {
+        instruction: String,
+
+        #[serde(default)]
+        operands: Vec<OperandYaml>,
+    },
+
+    /// Shorthand for:
+    /// `instruction_in: { mnemonics: [..], operands: [...] }`
+    InstructionInWithOperands {
+        instruction_in: Vec<String>,
+
+        #[serde(default)]
+        operands: Vec<OperandYaml>,
+    },
+
     Instruction {
         instruction: InstructionYaml,
+    },
+    InstructionIn {
+        instruction_in: InstructionInYaml,
     },
     IncDecSameTargetAsPrevLd {
         inc_dec_same_target_as_prev_ld: usize,
@@ -251,6 +275,9 @@ struct StringExprYaml {
 
     #[serde(default)]
     trim: Option<bool>,
+
+    #[serde(default)]
+    lower: Option<bool>,
 }
 
 impl StringExprYaml {
@@ -309,11 +336,57 @@ impl StringExprYaml {
             transforms.push(crate::StringTransform::Trim);
         }
 
+        if self.lower.unwrap_or(false) {
+            transforms.push(crate::StringTransform::Lower);
+        }
+
         Ok(crate::StringExpr { base, transforms })
     }
 }
 
 fn parse_string_field(s: &str) -> Result<crate::StringField, ConfigError> {
+    let s = s.trim();
+
+    if let Some((head, tail)) = s.split_once(',') {
+        let head = head.trim();
+        let tail = tail.trim();
+
+        if head.eq_ignore_ascii_case("instruction") {
+            let selector = tail.to_ascii_lowercase();
+
+            if matches!(selector.as_str(), "mnemonic" | "op") {
+                return Ok(crate::StringField::InstructionMnemonic);
+            }
+
+            if selector == "cc" {
+                return Ok(crate::StringField::InstructionCc);
+            }
+
+            if matches!(selector.as_str(), "root" | "target") {
+                return Ok(crate::StringField::InstructionRoot);
+            }
+
+            if let Some(num) = selector.strip_prefix("operand") {
+                let n: usize = num.parse().map_err(|_| {
+                    ConfigError::InvalidStringExpr(format!(
+                        "invalid instruction field '{s}': operand must be a number"
+                    ))
+                })?;
+                if n == 0 {
+                    return Err(ConfigError::InvalidStringExpr(format!(
+                        "invalid instruction field '{s}': operand is 1-based (operand1, operand2, ...)"
+                    )));
+                }
+
+                return Ok(crate::StringField::InstructionOperand { idx: n - 1 });
+            }
+
+            return Err(ConfigError::InvalidStringExpr(format!(
+                "unknown instruction field '{s}'"
+            )));
+        }
+    }
+
     match s {
         "code" => Ok(crate::StringField::Code),
         "text" => Ok(crate::StringField::Text),
@@ -327,41 +400,245 @@ fn parse_string_field(s: &str) -> Result<crate::StringField, ConfigError> {
 }
 
 #[derive(Clone, Deserialize)]
-struct InstructionYaml {
+#[serde(untagged)]
+enum InstructionYaml {
+    /// Shorthand for `instruction: { mnemonic: <string> }`.
+    Mnemonic(String),
+    Full(InstructionFullYaml),
+}
+
+#[derive(Clone, Deserialize)]
+struct InstructionFullYaml {
+    #[serde(default, alias = "op")]
     mnemonic: Option<String>,
 
     #[serde(default)]
     operands: Vec<OperandYaml>,
 }
 
+impl InstructionYaml {
+    fn into_parts(self) -> (Option<String>, Vec<OperandYaml>) {
+        match self {
+            InstructionYaml::Mnemonic(mnemonic) => (Some(mnemonic), Vec::new()),
+            InstructionYaml::Full(full) => (full.mnemonic, full.operands),
+        }
+    }
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(untagged)]
-enum OperandYaml {
-    Eq { eq: String },
-    CanonEq { canon_eq: String },
-    IsZeroLiteral { is_zero_literal: bool },
-    Any { any: Vec<OperandYaml> },
+enum InstructionInYaml {
+    /// Shorthand for `instruction_in: { mnemonics: [..] }`.
+    Mnemonics(Vec<String>),
+    Full(InstructionInFullYaml),
+}
+
+#[derive(Clone, Deserialize)]
+struct InstructionInFullYaml {
+    #[serde(alias = "in")]
+    mnemonics: Vec<String>,
+
+    #[serde(default)]
+    operands: Vec<OperandYaml>,
+}
+
+impl InstructionInYaml {
+    fn into_parts(self) -> (Vec<String>, Vec<OperandYaml>) {
+        match self {
+            InstructionInYaml::Mnemonics(mnemonics) => (mnemonics, Vec::new()),
+            InstructionInYaml::Full(full) => (full.mnemonics, full.operands),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct OperandYaml {
+    #[serde(default)]
+    eq: Option<String>,
+
+    #[serde(default)]
+    canon_eq: Option<String>,
+
+    #[serde(default)]
+    is_zero_literal: Option<bool>,
+
+    #[serde(default)]
+    is_reg8: Option<bool>,
+
+    #[serde(default)]
+    is_reg16: Option<bool>,
+
+    #[serde(default)]
+    is_reg16_stack: Option<bool>,
+
+    #[serde(default)]
+    is_cc: Option<bool>,
+
+    #[serde(default)]
+    is_mem: Option<bool>,
+
+    #[serde(default)]
+    is_mem_hl: Option<bool>,
+
+    #[serde(default)]
+    is_mem_hli: Option<bool>,
+
+    #[serde(default)]
+    is_mem_hld: Option<bool>,
+
+    #[serde(default)]
+    is_mem_r16: Option<bool>,
+
+    #[serde(default)]
+    is_mem_c: Option<bool>,
+
+    #[serde(default)]
+    is_imm: Option<bool>,
+
+    #[serde(default)]
+    is_number_literal: Option<bool>,
+
+    #[serde(default)]
+    is_u3_literal: Option<bool>,
+
+    #[serde(default)]
+    is_rst_vec_literal: Option<bool>,
+
+    #[serde(default)]
+    any_operand: Option<bool>,
+
+    #[serde(default)]
+    any: Option<Vec<OperandYaml>>,
 }
 
 impl OperandYaml {
     fn into_runtime(self) -> Result<crate::OperandCondition, ConfigError> {
-        Ok(match self {
-            OperandYaml::Eq { eq } => crate::OperandCondition::Eq(eq),
-            OperandYaml::CanonEq { canon_eq } => crate::OperandCondition::CanonEq(canon_eq),
-            OperandYaml::IsZeroLiteral { is_zero_literal } => {
-                if !is_zero_literal {
-                    return Err(ConfigError::InvalidOperand(
-                        "is_zero_literal must be true".to_string(),
-                    ));
-                }
-                crate::OperandCondition::IsZeroLiteral
+        let OperandYaml {
+            eq,
+            canon_eq,
+            is_zero_literal,
+            is_reg8,
+            is_reg16,
+            is_reg16_stack,
+            is_cc,
+            is_mem,
+            is_mem_hl,
+            is_mem_hli,
+            is_mem_hld,
+            is_mem_r16,
+            is_mem_c,
+            is_imm,
+            is_number_literal,
+            is_u3_literal,
+            is_rst_vec_literal,
+            any_operand,
+            any,
+        } = self;
+
+        if let Some(options) = any {
+            if eq.is_some()
+                || canon_eq.is_some()
+                || is_zero_literal.is_some()
+                || is_reg8.is_some()
+                || is_reg16.is_some()
+                || is_reg16_stack.is_some()
+                || is_cc.is_some()
+                || is_mem.is_some()
+                || is_mem_hl.is_some()
+                || is_mem_hli.is_some()
+                || is_mem_hld.is_some()
+                || is_mem_r16.is_some()
+                || is_mem_c.is_some()
+                || is_imm.is_some()
+                || is_number_literal.is_some()
+                || is_u3_literal.is_some()
+                || is_rst_vec_literal.is_some()
+                || any_operand.is_some()
+            {
+                return Err(ConfigError::InvalidOperand(
+                    "operand: `any:` cannot be combined with other keys".to_string(),
+                ));
             }
-            OperandYaml::Any { any } => crate::OperandCondition::Any(
-                any.into_iter()
+
+            return Ok(crate::OperandCondition::Any(
+                options
+                    .into_iter()
                     .map(OperandYaml::into_runtime)
                     .collect::<Result<Vec<_>, _>>()?,
-            ),
-        })
+            ));
+        }
+
+        if let Some(false) = any_operand {
+            return Err(ConfigError::InvalidOperand(
+                "any_operand must be true or omitted".to_string(),
+            ));
+        }
+
+        let mut conds: Vec<crate::OperandCondition> = Vec::new();
+
+        if let Some(eq) = eq {
+            conds.push(crate::OperandCondition::Eq(eq));
+        }
+        if let Some(canon_eq) = canon_eq {
+            conds.push(crate::OperandCondition::CanonEq(canon_eq));
+        }
+
+        let mut push_bool = |value: Option<bool>, cond: crate::OperandCondition| {
+            match value {
+                None => Ok(()),
+                Some(true) => {
+                    conds.push(cond);
+                    Ok(())
+                }
+                Some(false) => {
+                    conds.push(crate::OperandCondition::Not(Box::new(cond)));
+                    Ok(())
+                }
+            }
+        };
+
+        push_bool(is_zero_literal, crate::OperandCondition::IsZeroLiteral)?;
+        push_bool(is_reg8, crate::OperandCondition::IsReg8)?;
+        push_bool(is_reg16, crate::OperandCondition::IsReg16)?;
+        push_bool(
+            is_reg16_stack,
+            crate::OperandCondition::IsReg16Stack,
+        )?;
+        push_bool(is_cc, crate::OperandCondition::IsCc)?;
+        push_bool(is_mem, crate::OperandCondition::IsMem)?;
+        push_bool(is_mem_hl, crate::OperandCondition::IsMemHl)?;
+        push_bool(is_mem_hli, crate::OperandCondition::IsMemHli)?;
+        push_bool(is_mem_hld, crate::OperandCondition::IsMemHld)?;
+        push_bool(is_mem_r16, crate::OperandCondition::IsMemR16)?;
+        push_bool(is_mem_c, crate::OperandCondition::IsMemC)?;
+        push_bool(is_imm, crate::OperandCondition::IsImm)?;
+        push_bool(
+            is_number_literal,
+            crate::OperandCondition::IsNumberLiteral,
+        )?;
+        push_bool(is_u3_literal, crate::OperandCondition::IsU3Literal)?;
+        push_bool(
+            is_rst_vec_literal,
+            crate::OperandCondition::IsRstVecLiteral,
+        )?;
+
+        if let Some(true) = any_operand {
+            if !conds.is_empty() {
+                return Err(ConfigError::InvalidOperand(
+                    "any_operand cannot be combined with other keys".to_string(),
+                ));
+            }
+            return Ok(crate::OperandCondition::AnyOperand);
+        }
+
+        match conds.len() {
+            0 => Err(ConfigError::InvalidOperand(
+                "operand map must not be empty".to_string(),
+            )),
+            1 => Ok(conds.pop().unwrap()),
+            _ => Ok(crate::OperandCondition::All(conds)),
+        }
     }
 }
 
@@ -517,15 +794,80 @@ impl<'a> ConditionCompiler<'a> {
             ),
             ConditionYaml::Not { not } => StepCondition::Not(Box::new(self.compile_inline(*not)?)),
 
+            ConditionYaml::InstructionWithOperands {
+                instruction,
+                operands,
+            } => StepCondition::Instruction(crate::InstructionCondition {
+                mnemonic: Some(instruction),
+                operands: operands
+                    .into_iter()
+                    .map(OperandYaml::into_runtime)
+                    .collect::<Result<Vec<_>, _>>()?,
+            }),
+
+            ConditionYaml::InstructionInWithOperands {
+                instruction_in,
+                operands,
+            } => {
+                if instruction_in.is_empty() {
+                    return Err(ConfigError::InvalidInstruction(
+                        "instruction_in must include at least one mnemonic".to_string(),
+                    ));
+                }
+
+                let operands = operands
+                    .into_iter()
+                    .map(OperandYaml::into_runtime)
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                StepCondition::Any(
+                    instruction_in
+                        .into_iter()
+                        .map(|mnemonic| {
+                            StepCondition::Instruction(crate::InstructionCondition {
+                                mnemonic: Some(mnemonic),
+                                operands: operands.clone(),
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            }
+
             ConditionYaml::Instruction { instruction } => {
+                let (mnemonic, operands) = instruction.into_parts();
                 StepCondition::Instruction(crate::InstructionCondition {
-                    mnemonic: instruction.mnemonic,
-                    operands: instruction
-                        .operands
+                    mnemonic,
+                    operands: operands
                         .into_iter()
                         .map(OperandYaml::into_runtime)
                         .collect::<Result<Vec<_>, _>>()?,
                 })
+            }
+
+            ConditionYaml::InstructionIn { instruction_in } => {
+                let (mnemonics, operands) = instruction_in.into_parts();
+                if mnemonics.is_empty() {
+                    return Err(ConfigError::InvalidInstruction(
+                        "instruction_in must include at least one mnemonic".to_string(),
+                    ));
+                }
+
+                let operands = operands
+                    .into_iter()
+                    .map(OperandYaml::into_runtime)
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                StepCondition::Any(
+                    mnemonics
+                        .into_iter()
+                        .map(|mnemonic| {
+                            StepCondition::Instruction(crate::InstructionCondition {
+                                mnemonic: Some(mnemonic),
+                                operands: operands.clone(),
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                )
             }
 
             ConditionYaml::IncDecSameTargetAsPrevLd {
@@ -641,10 +983,11 @@ mod tests {
 
     #[test]
     fn loads_pack_from_yaml_and_compiles_regexes() {
-        let yaml = r#"
+                let yaml = r#"
 regexes:
     NO_OP_LD: '^ld ([abcdehl]), \1$'
     CALL_OR_RET: '^(?:call|ret)'
+
 conditions:
     op_is_one_of:
         code_in: ['xor a', 'xor a, a']
@@ -665,31 +1008,109 @@ conditions:
             code_eq: halt
 
 patterns:
-  no_op_ld:
-    name: No-op ld
-    steps:
+    no_op_ld:
+        name: No-op ld
+        steps:
             - all:
-                        - not_halt
-                        - { regex: NO_OP_LD }
-                        - regex_one_of
-                        - str_eq_one_of
+                    - not_halt
+                    - { regex: NO_OP_LD }
+                    - regex_one_of
+                    - str_eq_one_of
+
+    add_any:
+        name: Add any
+        steps:
+            - instruction: add
+
+    add_or_adc_any:
+        name: Add/adc any
+        steps:
+            - instruction_in: [add, adc]
+
+    add_or_adc_with_sibling_operands:
+        name: Add/adc sibling operands
+        steps:
+            - instruction_in: [add, adc]
+              operands:
+                  - { eq: a }
+                  - { any_operand: true }
+
+    add_to_a_redundant_arg:
+        name: Add/adc redundant arg
+        steps:
+            - instruction_in:
+                    in: [add, adc]
+                    operands:
+                        - { eq: a }
+                        - { any_operand: true }
 
 packs:
-  core:
-    patterns:
-      - no_op_ld
+    core:
+        patterns:
+            - no_op_ld
+            - add_any
+            - add_or_adc_any
+            - add_or_adc_with_sibling_operands
+            - add_to_a_redundant_arg
 "#;
 
         let pack = load_pattern_pack_yaml(yaml, "core").unwrap();
         assert_eq!(pack.pack, "core");
-        assert_eq!(pack.patterns.len(), 1);
+        assert_eq!(pack.patterns.len(), 5);
         assert_eq!(pack.patterns[0].name, "No-op ld");
+        assert_eq!(pack.patterns[1].name, "Add any");
+        assert_eq!(pack.patterns[2].name, "Add/adc any");
+        assert_eq!(pack.patterns[3].name, "Add/adc sibling operands");
+        assert_eq!(pack.patterns[4].name, "Add/adc redundant arg");
 
-        let lines = preprocess_properties("Label:\n  ld b, b\n");
+        let lines = preprocess_properties("Label:\n  ld b, b\n  add a, b\n  adc a, c\n");
         let got = run_pack_on_lines("file.asm", &lines, &pack);
-        assert_eq!(got.len(), 1);
+        assert_eq!(got.len(), 5);
         assert_eq!(got[0].0, "No-op ld");
         assert_eq!(got[0].1.len(), 1);
         assert_eq!(got[0].1[0].lines.len(), 1);
+
+        assert_eq!(got[1].0, "Add any");
+        assert_eq!(got[1].1.len(), 1);
+        assert_eq!(got[1].1[0].lines.len(), 1);
+
+        assert_eq!(got[2].0, "Add/adc any");
+        assert_eq!(got[2].1.len(), 2);
+
+        assert_eq!(got[3].0, "Add/adc sibling operands");
+        assert_eq!(got[3].1.len(), 2);
+
+        assert_eq!(got[4].0, "Add/adc redundant arg");
+        assert_eq!(got[4].1.len(), 2);
     }
+
+        #[test]
+        fn operand_maps_support_multiple_keys_and_false_negation() {
+                let yaml = r#"
+patterns:
+    mem_but_not_mem_r16:
+        name: Mem but not [bc]/[de]
+        steps:
+            - instruction:
+                    mnemonic: ld
+                    operands:
+                        - { eq: a }
+                        - { is_mem: true, is_mem_r16: false }
+
+packs:
+    core:
+        patterns:
+            - mem_but_not_mem_r16
+"#;
+
+                let pack = load_pattern_pack_yaml(yaml, "core").unwrap();
+                let lines = preprocess_properties(
+                        "  ld a, [bc]\n  ld a, [de]\n  ld a, [hl]\n  ld a, [hFoo]\n",
+                );
+                let got = run_pack_on_lines("file.asm", &lines, &pack);
+                assert_eq!(got.len(), 1);
+                assert_eq!(got[0].0, "Mem but not [bc]/[de]");
+                assert_eq!(got[0].1.len(), 1);
+                assert_eq!(got[0].1[0].lines[0].code, "ld a, [hFoo]");
+        }
 }

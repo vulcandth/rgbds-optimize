@@ -195,10 +195,81 @@ You can match on parsed mnemonics and operands:
             - { canon_eq: '[hld]' }
 ```
 
+Shorthand forms are supported:
+
+```yaml
+- when: { instruction: ld }
+```
+
+If you want a compact mnemonic plus operands, you can also write `operands` as a sibling key:
+
+```yaml
+- when:
+    instruction: ld
+    operands:
+      - { eq: a }
+      - { canon_eq: '[hli]' }
+```
+
+And `mnemonic:` can also be written as `op:`:
+
+```yaml
+- when:
+    instruction:
+      op: ld
+      operands:
+        - { eq: a }
+        - { canon_eq: '[hli]' }
+```
+
 Supported fields:
 
 - `instruction.mnemonic` (optional): compared case-insensitively
 - `instruction.operands` (optional): list of operand matchers
+  - If provided, the operand count must match exactly.
+
+You can also match the same operand form across multiple mnemonics:
+
+```yaml
+- when:
+    instruction_in:
+      mnemonics: [add, adc, sub, sbc, and, xor, or, cp]
+      operands:
+        - { eq: a }
+        - { any_operand: true }
+```
+
+Shorthand form (mnemonics only):
+
+```yaml
+- when: { instruction_in: [add, adc, sub, sbc, and, xor, or, cp] }
+```
+
+If you want mnemonics plus operands, you can write `operands` as a sibling key:
+
+```yaml
+- when:
+    instruction_in: [add, adc, sub, sbc, and, xor, or, cp]
+    operands:
+      - { eq: a }
+      - { any_operand: true }
+```
+
+And `mnemonics:` can also be written as `in:`:
+
+```yaml
+- when:
+    instruction_in:
+      in: [add, adc]
+      operands:
+        - { eq: a }
+        - { any_operand: true }
+```
+
+Supported fields:
+
+- `instruction_in.mnemonics` (required): list of mnemonics (case-insensitive)
+- `instruction_in.operands` (optional): list of operand matchers
   - If provided, the operand count must match exactly.
 
 Operand matchers:
@@ -206,6 +277,7 @@ Operand matchers:
 - `{ eq: "..." }`: case-insensitive string match
 - `{ canon_eq: "..." }`: compares after RGBDS canonicalization (e.g. `[hl+]` → `[hli]`)
 - `{ is_zero_literal: true }`: matches numeric zero in common RGBDS spellings
+- `{ any_operand: true }`: matches any single operand (still enforces operand count)
 - `{ any: [ ... ] }`: any-of for operand matchers
 
 ### Relative-to-Previous-Step Conditions
@@ -262,6 +334,16 @@ Supported fields:
 - `comment`: comment text (trimmed)
 - `comment_lower`: lowercase comment text
 
+Instruction-derived fields (parsed from `code`):
+
+- `instruction, mnemonic` (alias: `instruction, op`): instruction mnemonic (lowercased)
+- `instruction, operandN`: instruction operand `N` (1-based: `operand1`, `operand2`, ...)
+- `instruction, cc`: condition code when present as `operand1` (`z`, `nz`, `c`, `nc`)
+- `instruction, root` (alias: `instruction, target`): first non-cc operand
+
+Note: In YAML flow mappings (`{ ... }`), values containing commas must be quoted:
+`{ current: 'instruction, operand1' }`.
+
 ### String Expression Transforms
 
 After selecting a base string, transforms run in this order (when present):
@@ -278,6 +360,7 @@ After selecting a base string, transforms run in this order (when present):
 10. `strip_trailing_colon: true` — removes trailing `:`
 11. `symbol_like: true` — takes a leading “symbol-like” run (`[A-Za-z0-9_.%$&]+`)
 12. `trim: true` — trims surrounding whitespace
+13. `lower: true` — ASCII-lowercase the resulting string
 
 Notes:
 
