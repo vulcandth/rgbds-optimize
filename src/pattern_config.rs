@@ -167,6 +167,10 @@ enum ConditionYaml {
     CodeContains {
         code_contains: String,
     },
+
+    CodeContainsWord {
+        code_contains_word: String,
+    },
     CodeContainsAny {
         code_contains_any: Vec<String>,
     },
@@ -512,10 +516,16 @@ struct OperandYaml {
     is_zero_literal: Option<bool>,
 
     #[serde(default)]
+    is_zero_numeric_literal: Option<bool>,
+
+    #[serde(default)]
     lower: Option<bool>,
 
     #[serde(default)]
     is_one_literal: Option<bool>,
+
+    #[serde(default)]
+    is_one_numeric_literal: Option<bool>,
 
     #[serde(default)]
     is_reg8: Option<bool>,
@@ -612,8 +622,10 @@ impl OperandYaml {
             ne,
             canon_ne,
             is_zero_literal,
+            is_zero_numeric_literal,
             lower: _lower,
             is_one_literal,
+            is_one_numeric_literal,
             is_reg8,
             is_reg16,
             is_reg16_stack,
@@ -642,7 +654,9 @@ impl OperandYaml {
             if eq.is_some()
                 || canon_eq.is_some()
                 || is_zero_literal.is_some()
+                || is_zero_numeric_literal.is_some()
                 || is_one_literal.is_some()
+                || is_one_numeric_literal.is_some()
                 || is_reg8.is_some()
                 || is_reg16.is_some()
                 || is_reg16_stack.is_some()
@@ -722,8 +736,18 @@ impl OperandYaml {
         );
         push_bool(
             &mut conds,
+            is_zero_numeric_literal,
+            crate::OperandCondition::IsZeroNumericLiteral,
+        );
+        push_bool(
+            &mut conds,
             is_one_literal,
             crate::OperandCondition::NumberLiteralEq(1),
+        );
+        push_bool(
+            &mut conds,
+            is_one_numeric_literal,
+            crate::OperandCondition::IsOneNumericLiteral,
         );
         push_bool(&mut conds, is_reg8, crate::OperandCondition::IsReg8);
         push_bool(&mut conds, is_reg16, crate::OperandCondition::IsReg16);
@@ -936,6 +960,10 @@ impl<'a> ConditionCompiler<'a> {
 
             ConditionYaml::CodeContains { code_contains } => {
                 StepCondition::CodeContains(code_contains)
+            }
+
+            ConditionYaml::CodeContainsWord { code_contains_word } => {
+                StepCondition::CodeContainsWord(code_contains_word)
             }
 
             ConditionYaml::CodeContainsAny { code_contains_any } => StepCondition::Any(

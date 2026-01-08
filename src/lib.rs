@@ -543,6 +543,7 @@ pub enum StepCondition {
     CodeStartsWith(String),
     CodeEndsWith(String),
     CodeContains(String),
+    CodeContainsWord(String),
     Any(Vec<StepCondition>),
     All(Vec<StepCondition>),
     Not(Box<StepCondition>),
@@ -565,6 +566,8 @@ pub enum OperandCondition {
     Eq(String),
     CanonEq(String),
     IsZeroLiteral,
+    IsZeroNumericLiteral,
+    IsOneNumericLiteral,
     NumberLiteralEq(i64),
     NumberLiteralNe(i64),
     NumberLiteralLt(i64),
@@ -597,6 +600,8 @@ impl OperandCondition {
             OperandCondition::Eq(want) => operand.eq_ignore_ascii_case(want),
             OperandCondition::CanonEq(want) => canonicalize_rgbds_operand(operand) == *want,
             OperandCondition::IsZeroLiteral => is_rgbds_zero_literal(operand),
+            OperandCondition::IsZeroNumericLiteral => is_rgbds_zero_numeric_literal(operand),
+            OperandCondition::IsOneNumericLiteral => is_rgbds_one_numeric_literal(operand),
             OperandCondition::NumberLiteralEq(want) => {
                 matches!(parse_rgbds_int(operand), Some(got) if got == *want)
             }
@@ -635,6 +640,61 @@ impl OperandCondition {
             OperandCondition::Not(cond) => !cond.matches(operand),
         }
     }
+}
+
+fn is_ascii_word_char(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
+fn contains_ascii_word(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+
+    let needle = needle.as_bytes();
+    let hay = haystack.as_bytes();
+    if needle.len() > hay.len() {
+        return false;
+    }
+
+    for start in 0..=hay.len() - needle.len() {
+        if !hay[start..start + needle.len()].eq_ignore_ascii_case(needle) {
+            continue;
+        }
+
+        let left_ok = start == 0 || !is_ascii_word_char(hay[start - 1]);
+        let end = start + needle.len();
+        let right_ok = end == hay.len() || !is_ascii_word_char(hay[end]);
+
+        if left_ok && right_ok {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn strip_rgbds_base_prefix(op: &str) -> &str {
+    let bytes = op.as_bytes();
+    if bytes.first().is_some_and(|b| matches!(b, b'%' | b'$' | b'&')) {
+        &op[1..]
+    } else {
+        op
+    }
+}
+
+fn is_rgbds_zero_numeric_literal(op: &str) -> bool {
+    let rest = strip_rgbds_base_prefix(op.trim());
+    !rest.is_empty() && rest.as_bytes().iter().all(|b| *b == b'0')
+}
+
+fn is_rgbds_one_numeric_literal(op: &str) -> bool {
+    let rest = strip_rgbds_base_prefix(op.trim());
+    let bytes = rest.as_bytes();
+    if bytes.is_empty() || *bytes.last().unwrap() != b'1' {
+        return false;
+    }
+    bytes[..bytes.len() - 1].iter().all(|b| *b == b'0')
 }
 
 fn operand_token_lower_no_space(op: &str) -> String {
@@ -858,6 +918,8 @@ impl InstructionCondition {
                                 | IsU3Literal
                                 | IsRstVecLiteral
                                 | IsZeroLiteral
+                                | IsZeroNumericLiteral
+                                | IsOneNumericLiteral
                                 | NumberLiteralEq(_)
                                 | NumberLiteralNe(_)
                                 | NumberLiteralLt(_)
@@ -917,6 +979,7 @@ impl StepCondition {
             StepCondition::CodeStartsWith(prefix) => line.code.starts_with(prefix),
             StepCondition::CodeEndsWith(suffix) => line.code.ends_with(suffix),
             StepCondition::CodeContains(needle) => line.code.contains(needle),
+            StepCondition::CodeContainsWord(needle) => contains_ascii_word(&line.code, needle),
             StepCondition::Any(conds) => conds.iter().any(|c| c.matches(line, _prev)),
             StepCondition::All(conds) => conds.iter().all(|c| c.matches(line, _prev)),
             StepCondition::Not(cond) => !cond.matches(line, _prev),

@@ -131,7 +131,19 @@ conditions:
   # loaded pair registers.
   pair_add_three_step_matches_prev_pairs:
     all:
-      - { regex: ADD_PAIR_THREE_STEP }
+      - all:
+          - instruction:
+              mnemonic: add
+              operands:
+                - any:
+                    - { eq: hl }
+                    - { eq: bc }
+                    - { eq: de }
+                - { any_operand: true }
+          - not:
+              str_eq_in:
+                left: { current: 'instruction, operand2', lower: true, trim: true }
+                rights: ['hl', 'bc', 'de']
       - str_eq:
           left: { current: code, byte_at: 4 }
           right: { prev: { idx: 0, field: code }, byte_at: 3 }
@@ -143,7 +155,8 @@ conditions:
   # must not touch the active pair via memory/stack (push/pop/[hl], etc.).
   pair_eq_n_gap_is_safe:
     all:
-      - not: { regex: CONTROL_FLOW_PREFIX }
+      - not:
+          code_starts_with_any: ['jr', 'jp', 'jmp', 'call', 'rst', 'ret', 'predef']
       - not:
           all:
             - str_eq: { left: { current: code, byte_at: 0 }, right: { prev: { idx: 0, field: code }, byte_at: 0 } }
@@ -239,7 +252,11 @@ conditions:
 
   reg_conditional_ternary_step5:
     any:
-      - { regex: LDH_R }
+      - instruction_in:
+          mnemonics: [ld, ldh]
+          operands:
+            - { is_reg8: true }
+            - { any_operand: true }
       - all:
           - code_in: ['xor a', 'xor a, a']
           - any:
@@ -559,9 +576,15 @@ patterns:
     name: a & X == X
     description: "Bad: and N / cp N. Good: or ~N / inc a (unless you need the masked value or the carry flag)"
     steps:
-      - regex: AND_IMM
+      - instruction:
+          mnemonic: and
+          operands:
+            - { is_imm: true }
       - all:
-          - { regex: CP_IMM }
+          - instruction:
+              mnemonic: cp
+              operands:
+                - { is_imm: true }
           - str_eq:
               left:
                 current: code
@@ -574,10 +597,21 @@ patterns:
     name: a = (a & MASK) | (b|c|d|e|h|l & ~MASK)
     description: "Bad: and MASK / ld c, a / ld a, b / and ~MASK / or c. Good: xor b / and MASK / xor b"
     steps:
-      - regex: AND_IMM
-      - regex: LD_RH_A
+      - instruction:
+          mnemonic: and
+          operands:
+            - { is_imm: true }
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { is_reg8: true, ne: a }
+            - { eq: a }
       - all:
-          - { regex: LD_A_RH }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: a }
+                - { is_reg8: true, ne: a }
           - not:
               str_eq:
                 left:
@@ -589,9 +623,15 @@ patterns:
                   after_prefix: 'ld '
                   before_comma: true
                   trim: true
-      - regex: AND_IMM
+      - instruction:
+          mnemonic: and
+          operands:
+            - { is_imm: true }
       - all:
-          - { regex: OR_R }
+          - instruction:
+              mnemonic: or
+              operands:
+                - { is_reg8: true, ne: a }
           - str_eq:
               left:
                 current: code
@@ -607,27 +647,97 @@ patterns:
     name: hl|bc|de += a|N
     description: "Bad: add l|N / ld l, a / ld a, h|0 / adc 0|h / ld h, a (hl or bc or de). Good: add l|N / ld l, a / adc h / sub l / ld h, a"
     steps:
-      - regex: ADD_A_LCE_OR_IMM
+      - any:
+          - instruction:
+              mnemonic: add
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                    - { is_imm: true }
+          - instruction:
+              mnemonic: add
+              operands:
+                - { eq: a }
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                    - { is_imm: true }
       - all:
-          - regex: LD_LCE_A
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                - { eq: a }
           - pair_add_step2
       - all:
-          - regex: LD_A_HBD_OR_0
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: a }
+                - any:
+                    - { eq: h }
+                    - { eq: b }
+                    - { eq: d }
+                    - { is_zero_literal: true }
           - pair_add_step3
       - all:
-          - regex: ADC_HBD_OR_0
+          - instruction:
+              mnemonic: adc
+              operands:
+                - any:
+                    - { eq: h }
+                    - { eq: b }
+                    - { eq: d }
+                    - { is_zero_literal: true }
           - pair_add_step4
       - all:
-          - regex: LD_HBD_A
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: h }
+                    - { eq: b }
+                    - { eq: d }
+                - { eq: a }
           - pair_add_step5
 
   py_pair_add_a_or_n_jump:
     name: hl|bc|de += a|N (jump)
     description: "Okay: add l|N / ld l, a / jr nc, .noCarry / inc h / .noCarry. Good: add l|N / ld l, a / adc h / sub l / ld h, a"
     steps:
-      - regex: ADD_A_LCE_OR_IMM
+      - any:
+          - instruction:
+              mnemonic: add
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                    - { is_imm: true }
+          - instruction:
+              mnemonic: add
+              operands:
+                - { eq: a }
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                    - { is_imm: true }
       - all:
-          - regex: LD_LCE_A
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                - { eq: a }
           - pair_add_step2
       - instruction_in:
           mnemonics: [jr, jp, jmp]
@@ -651,29 +761,95 @@ patterns:
     name: hl|bc|de = Foo + a
     description: "Bad: ld hl, Foo / add l / ld l, a / adc h / sub l / ld h, a. Good: add LOW(Foo) / ld l, a / adc HIGH(Foo) / sub l / ld h, a"
     steps:
-      - regex: LD_PAIR_IMM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - any:
+                - { eq: hl }
+                - { eq: bc }
+                - { eq: de }
+            - { is_imm: true }
       - all:
-          - regex: ADD_LCE
+          - any:
+              - instruction:
+                  mnemonic: add
+                  operands:
+                    - any:
+                        - { eq: l }
+                        - { eq: c }
+                        - { eq: e }
+              - instruction:
+                  mnemonic: add
+                  operands:
+                    - { eq: a }
+                    - any:
+                        - { eq: l }
+                        - { eq: c }
+                        - { eq: e }
           - str_eq:
               left: { current: code, last_char: true }
               right: { prev: { idx: 0, field: code }, byte_at: 4 }
       - all:
-          - regex: LD_LCE_A
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                - { eq: a }
           - str_eq:
               left: { current: code, byte_at: 3 }
               right: { prev: { idx: 0, field: code }, byte_at: 4 }
       - all:
-          - regex: ADC_HBD
+          - any:
+              - instruction:
+                  mnemonic: adc
+                  operands:
+                    - any:
+                        - { eq: h }
+                        - { eq: b }
+                        - { eq: d }
+              - instruction:
+                  mnemonic: adc
+                  operands:
+                    - { eq: a }
+                    - any:
+                        - { eq: h }
+                        - { eq: b }
+                        - { eq: d }
           - str_eq:
               left: { current: code, last_char: true }
               right: { prev: { idx: 0, field: code }, byte_at: 3 }
       - all:
-          - regex: SUB_LCE
+          - any:
+              - instruction:
+                  mnemonic: sub
+                  operands:
+                    - any:
+                        - { eq: l }
+                        - { eq: c }
+                        - { eq: e }
+              - instruction:
+                  mnemonic: sub
+                  operands:
+                    - { eq: a }
+                    - any:
+                        - { eq: l }
+                        - { eq: c }
+                        - { eq: e }
           - str_eq:
               left: { current: code, last_char: true }
               right: { prev: { idx: 0, field: code }, byte_at: 4 }
       - all:
-          - regex: LD_HBD_A
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: h }
+                    - { eq: b }
+                    - { eq: d }
+                - { eq: a }
           - str_eq:
               left: { current: code, byte_at: 3 }
               right: { prev: { idx: 0, field: code }, byte_at: 3 }
@@ -682,10 +858,35 @@ patterns:
     name: b|c|d|e|h|l += carry
     description: "Bad: ld a, h|0 / adc 0|h / ld h, a. Good: jr nc, .noCarry / inc h / .noCarry"
     steps:
-      - regex: LD_A_BCDEHL_OR_0
-      - regex: ADC_BCDEHL_OR_0
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { eq: a }
+            - any:
+                - { eq: b }
+                - { eq: c }
+                - { eq: d }
+                - { eq: e }
+                - { eq: h }
+                - { eq: l }
+                - { is_zero_literal: true }
+      - instruction:
+          mnemonic: adc
+          operands:
+            - any:
+                - { eq: b }
+                - { eq: c }
+                - { eq: d }
+                - { eq: e }
+                - { eq: h }
+                - { eq: l }
+                - { is_zero_literal: true }
       - all:
-          - { regex: LD_RH_A }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { is_reg8: true, ne: a }
+                - { eq: a }
           - any:
               - str_eq:
                   left:
@@ -717,10 +918,35 @@ patterns:
     name: b|c|d|e|h|l -= carry
     description: "Bad: ld a, h|0 / sbc 0|h / ld h, a. Good: jr nc, .noCarry / dec h / .noCarry"
     steps:
-      - regex: LD_A_BCDEHL_OR_0
-      - regex: SBC_BCDEHL_OR_0
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { eq: a }
+            - any:
+                - { eq: b }
+                - { eq: c }
+                - { eq: d }
+                - { eq: e }
+                - { eq: h }
+                - { eq: l }
+                - { is_zero_literal: true }
+      - instruction:
+          mnemonic: sbc
+          operands:
+            - any:
+                - { eq: b }
+                - { eq: c }
+                - { eq: d }
+                - { eq: e }
+                - { eq: h }
+                - { eq: l }
+                - { is_zero_literal: true }
       - all:
-          - { regex: LD_RH_A }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { is_reg8: true, ne: a }
+                - { eq: a }
           - any:
               - str_eq:
                   left:
@@ -752,9 +978,41 @@ patterns:
     name: hl|bc|de = a * 16
     description: "Bad: ld l, a / ld h, 0 / add hl, hl / add hl, hl / add hl, hl / add hl, hl. Good: solutions involving 'add a' or 'xor a' (if possible)"
     steps:
-      - regex_in: [LD_LCE_A, LD_HBD_0]
+      - any:
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                - { eq: a }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: h }
+                    - { eq: b }
+                    - { eq: d }
+                - { is_zero_literal: true }
       - all:
-          - regex_in: [LD_LCE_A, LD_HBD_0]
+          - any:
+              - instruction:
+                  mnemonic: ld
+                  operands:
+                    - any:
+                        - { eq: l }
+                        - { eq: c }
+                        - { eq: e }
+                    - { eq: a }
+              - instruction:
+                  mnemonic: ld
+                  operands:
+                    - any:
+                        - { eq: h }
+                        - { eq: b }
+                        - { eq: d }
+                    - { is_zero_literal: true }
           - not:
               str_eq:
                 left: { current: code }
@@ -780,9 +1038,41 @@ patterns:
     name: hl|bc|de = a * 16 (rept)
     description: "Bad: ld l, a / ld h, 0 / rept 4 / add hl, hl / endr. Good: solutions involving 'add a' or 'xor a' (if possible)"
     steps:
-      - regex_in: [LD_LCE_A, LD_HBD_0]
+      - any:
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: c }
+                    - { eq: e }
+                - { eq: a }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: h }
+                    - { eq: b }
+                    - { eq: d }
+                - { is_zero_literal: true }
       - all:
-          - regex_in: [LD_LCE_A, LD_HBD_0]
+          - any:
+              - instruction:
+                  mnemonic: ld
+                  operands:
+                    - any:
+                        - { eq: l }
+                        - { eq: c }
+                        - { eq: e }
+                    - { eq: a }
+              - instruction:
+                  mnemonic: ld
+                  operands:
+                    - any:
+                        - { eq: h }
+                        - { eq: b }
+                        - { eq: d }
+                    - { is_zero_literal: true }
           - not:
               str_eq:
                 left: { current: code }
@@ -799,9 +1089,13 @@ patterns:
                 before_comma: true
                 trim: true
                 pair_reg: true
-      - regex: REPT_4_CI
+      - str_eq:
+          left: { current: code, lower: true }
+          right: { const: 'rept 4' }
       - mul16_add_pair_matches_prev_ld
-      - regex: ENDR_CI
+      - str_eq:
+          left: { current: code, lower: true }
+          right: { const: 'endr' }
 
   py_hl_mul_2:
     name: hl *= 2
@@ -818,13 +1112,43 @@ patterns:
     name: hl = *Foo
     description: "Bad: ld a, [Foo] / ld l, a / ld a, [Foo+1] / ld h, a. Good: ld hl, Foo / ld a, [hli] / ld h, [hl] / ld l, a. Bad: ld a, [Foo] / ld h, a / ld a, [Foo+1] / ld l, a. Good: ld hl, Foo / ld a, [hli] / ld l, [hl] / ld h, a"
     steps:
-      - regex: LD_A_MEM_NOT_HBD
-      - regex: LD_LH_A
       - all:
-          - { regex: LD_A_MEM_NOT_HBD }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: a }
+                - { is_mem: true }
+          - not:
+              str_eq_in:
+                left: { current: 'instruction, operand2', lower: true, byte_at: 1 }
+                rights: ['h', 'b', 'd']
+      - instruction:
+          mnemonic: ld
+          operands:
+            - any:
+                - { eq: l }
+                - { eq: h }
+            - { eq: a }
+      - all:
+          - all:
+              - instruction:
+                  mnemonic: ld
+                  operands:
+                    - { eq: a }
+                    - { is_mem: true }
+              - not:
+                  str_eq_in:
+                    left: { current: 'instruction, operand2', lower: true, byte_at: 1 }
+                    rights: ['h', 'b', 'd']
           - pair_eq_deref_foo_step3
       - all:
-          - { regex: LD_LH_A }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: l }
+                    - { eq: h }
+                - { eq: a }
           - not:
               str_eq:
                 left:
@@ -842,9 +1166,17 @@ patterns:
     name: h,l|b,c|d,e = P,Q
     description: "Bad: ld b, P / ld c, Q. Good: lb bc, P, Q"
     steps:
-      - regex: LD_R_IMM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { is_reg8: true, ne: a }
+            - { is_imm: true }
       - all:
-          - { regex: LD_R_IMM }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { is_reg8: true, ne: a }
+                - { is_imm: true }
           - str_eq:
               left: { current: context }
               right: { prev: { idx: 0, field: context } }
@@ -970,13 +1302,34 @@ patterns:
     name: a == 0
     description: "Bad: cp|or 0. Bad: and $ff. Good: and|or a"
     steps:
-      - regex: CP_OR_0_OR_AND_FF
+      - any:
+          - instruction:
+              mnemonic: cp
+              operands:
+                - { is_zero_numeric_literal: true }
+          - instruction:
+              mnemonic: or
+              operands:
+                - { is_zero_numeric_literal: true }
+          - instruction:
+              mnemonic: and
+              operands:
+                - { eq: a }
+                - { number_eq: 255 }
+          - instruction:
+              mnemonic: and
+              operands:
+                - { eq: a }
+                - { number_eq: -1 }
 
   py_a_eq_1_cmp:
     name: a == 1
     description: "Okay: cp 1. Good: dec a (unless you need a or carry)"
     steps:
-      - regex: CP_1
+      - instruction:
+          mnemonic: cp
+          operands:
+            - { is_one_numeric_literal: true }
 
   py_ei_ret:
     name: ei + ret
@@ -1122,7 +1475,13 @@ patterns:
     name: call hl
     description: "Bad: ld bc|de, Foo / push bc|de / jp hl / Foo: .... Good: call _hl_ (defined in home as _hl_:: jp hl)"
     steps:
-      - regex: LD_BCDE_IMM_NOT_HBD
+      - instruction:
+          mnemonic: ld
+          operands:
+            - any:
+                - { eq: bc }
+                - { eq: de }
+            - { is_imm: true }
       - all:
           - any:
               - all:
@@ -1155,20 +1514,44 @@ patterns:
     name: Pointless hli|hld
     description: "Bad: { ld a, [hli|hld] | ld [hli|hld], a } / { ld hl, Foo | pop hl }. Good: { ld a, [hl] | ld [hl], a }"
     steps:
-      - regex: POINTLESS_HLI_HLD_STEP1
+      - any:
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: a }
+                - any:
+                    - { is_mem_hli: true }
+                    - { is_mem_hld: true }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { is_mem_hli: true }
+                    - { is_mem_hld: true }
+                - { eq: a }
       - rewind: 1
         when:
           all:
-            - not: { regex: CONTROL_FLOW_PREFIX }
-            - not: { regex: WORD_HL }
-      - regex: LD_HL_IMM_OR_POP_HL
+            - not:
+                code_starts_with_any: ['jr', 'jp', 'jmp', 'call', 'rst', 'ret', 'predef']
+            - not: { code_contains_word: 'hl' }
+      - any:
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: hl }
+                - { any_operand: true }
+          - instruction:
+              mnemonic: pop
+              operands:
+                - { eq: hl }
 
   py_pointless_jumps:
     name: Pointless jumps
     description: "Bad: jr|jp Foo / Foo: .... Good: fall through to Foo: ..."
     steps:
       - all:
-          - { regex: POINTLESS_JUMPS_STEP1 }
+          - code_starts_with_any: ['jr ', 'jp ', 'jmp ', 'jump ', 'sjump ', 'jumpchannel ', 'sound_jump ']
           - not: { code_contains: ',' }
       - all:
           - str_eq:
@@ -1251,7 +1634,12 @@ patterns:
       - all:
           - is_ld_or_ldh
           - { code_contains: ',' }
-          - not: { regex: LOAD_SRC_IS_SINGLE_REG }
+          - not:
+              instruction_in:
+                mnemonics: [ld, ldh]
+                operands:
+                  - { any_operand: true }
+                  - { is_reg8: true }
           - not: volatile_operand
       - all:
           - { code_starts_with: 'ld a,' }
@@ -1293,21 +1681,95 @@ patterns:
     name: Redundant and|or
     description: "Bad: and|or|xor X / and|or a. Good: and|or|xor N"
     steps:
-      - regex: AND_OR_XOR
-      - regex: AND_OR_A
+      - instruction_in:
+          mnemonics: [and, or, xor]
+      - any:
+          - instruction:
+              mnemonic: and
+              operands:
+                - { eq: a }
+          - instruction:
+              mnemonic: or
+              operands:
+                - { eq: a }
+          - instruction:
+              mnemonic: and
+              operands:
+                - { eq: a }
+                - { eq: a }
+          - instruction:
+              mnemonic: or
+              operands:
+                - { eq: a }
+                - { eq: a }
 
   py_pointless_and_or_a:
     name: Pointless and|or a
     description: "Bad: and|or a / (any instruction that affects z and c). Good: (the instruction that affects z and c)"
     steps:
-      - regex: AND_OR_A
-      - regex: AFFECTS_ZC
+      - any:
+          - instruction:
+              mnemonic: and
+              operands:
+                - { eq: a }
+          - instruction:
+              mnemonic: or
+              operands:
+                - { eq: a }
+          - instruction:
+              mnemonic: and
+              operands:
+                - { eq: a }
+                - { eq: a }
+          - instruction:
+              mnemonic: or
+              operands:
+                - { eq: a }
+                - { eq: a }
+      - any:
+          - instruction:
+              mnemonic: pop
+              operands:
+                - { eq: af }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: hl }
+                - { eq: sp }
+          - instruction_in:
+              mnemonics:
+                - rlca
+                - rrca
+                - rla
+                - rra
+                - daa
+                - add
+                - adc
+                - sub
+                - sbc
+                - and
+                - or
+                - xor
+                - cp
+                - rlc
+                - rrc
+                - rl
+                - rr
+                - sla
+                - sra
+                - swap
+                - srl
+                - ldhl
 
   py_redundant_inc_dec:
     name: Redundant inc|dec
     description: "Bad: ld P, N / inc|dec P (unless the inc|dec flags are needed). Good: ld P, X+/-1"
     steps:
-      - regex: LD_ANY_IMM_NOT_REG_OR_MEM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { any_operand: true }
+            - { is_imm: true }
       - any:
           - all:
               - { code_starts_with: 'inc ' }
@@ -1338,9 +1800,23 @@ patterns:
     name: hl|bc|de = N / bc|de|hl = K / hl|bc|de += bc|de|hl
     description: "Bad: hl|bc|de = N / bc|de|hl = K / hl|bc|de += bc|de|hl (unless K is needed in bc|de|hl). Good: hl|bc|de = N + K"
     steps:
-      - regex: LD_PAIR_IMM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - any:
+                - { eq: hl }
+                - { eq: bc }
+                - { eq: de }
+            - { is_imm: true }
       - all:
-          - { regex: LD_PAIR_IMM }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - any:
+                    - { eq: hl }
+                    - { eq: bc }
+                    - { eq: de }
+                - { is_imm: true }
           - not:
               str_eq:
                 left:
@@ -1352,7 +1828,19 @@ patterns:
       - rewind: 1
         when:
           all:
-            - { regex: ADD_PAIR_THREE_STEP }
+            - all:
+                - instruction:
+                    mnemonic: add
+                    operands:
+                      - any:
+                          - { eq: hl }
+                          - { eq: bc }
+                          - { eq: de }
+                      - { any_operand: true }
+                - not:
+                    str_eq_in:
+                      left: { current: 'instruction, operand2', lower: true, trim: true }
+                      rights: ['hl', 'bc', 'de']
             - str_eq:
                 left:
                   current: code
@@ -1372,7 +1860,14 @@ patterns:
     name: hl|bc|de = N / ... / inc|dec hl|bc|de
     description: "Bad: hl|bc|de = N / ... / inc|dec hl|bc|de. Good: hl|bc|de = N +/- 1 / ..."
     steps:
-      - regex: LD_PAIR_IMM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - any:
+                - { eq: hl }
+                - { eq: bc }
+                - { eq: de }
+            - { is_imm: true }
       - rewind: 1
         when: pair_eq_n_gap_is_safe
       - rewind: 1
@@ -1407,10 +1902,24 @@ patterns:
     name: hl|bc|de = N / ... / bc|de|hl = K / hl|bc|de += bc|de|hl
     description: "Bad: hl|bc|de = N / ... / bc|de|hl = K / hl|bc|de += bc|de|hl (unless K is needed in bc|de|hl). Good: hl|bc|de = N + K / ..."
     steps:
-      - regex: LD_PAIR_IMM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - any:
+                - { eq: hl }
+                - { eq: bc }
+                - { eq: de }
+            - { is_imm: true }
       - rewind: 1
         when: pair_eq_n_gap_is_safe
-      - regex: LD_PAIR_IMM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - any:
+                - { eq: hl }
+                - { eq: bc }
+                - { eq: de }
+            - { is_imm: true }
       - rewind: 1
         when: pair_add_three_step_matches_prev_pairs
 
@@ -1418,13 +1927,25 @@ patterns:
     name: dec a, then AddNTimes
     description: "Bad: ld hl, Foo / dec a / ld bc, BAR / call|rst AddNTimes. Bad: ld hl, Foo / ld bc, BAR / dec a / call|rst AddNTimes. Good: ld hl, Foo - BAR / ld bc, BAR / call|rst AddNTimes"
     steps:
-      - regex: LD_HL_IMM
+      - instruction:
+          mnemonic: ld
+          operands:
+            - { eq: hl }
+            - { is_imm: true }
       - any:
-          - { regex: LD_BC_IMM }
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: bc }
+                - { is_imm: true }
           - { code_eq: 'dec a' }
       - all:
           - any:
-              - { regex: LD_BC_IMM }
+              - instruction:
+                  mnemonic: ld
+                  operands:
+                    - { eq: bc }
+                    - { is_imm: true }
               - { code_eq: 'dec a' }
           - any:
               - all:
@@ -1443,7 +1964,11 @@ patterns:
                   - str_eq:
                       left: { prev: { idx: 1, field: code } }
                       right: { const: 'dec a' }
-      - regex: CALL_RST_ADDNTIMES
+      - instruction_in:
+          mnemonics: [call, rst]
+          has_cc: false
+          operands:
+            - { eq: AddNTimes }
 
   py_redundant_ret:
     name: Redundant ret
@@ -1493,13 +2018,29 @@ patterns:
     name: Inefficient WRAM increment/decrement
     description: "Bad: ld a, [wFoo] / inc|dec a / ld [wFoo], a (unless hl needs to be preserved). Good: ld hl, wFoo / inc|dec [hl]"
     steps:
-      - regex: LD_WRAM_LOAD
+      - all:
+          - instruction:
+              mnemonic: ld
+              operands:
+                - { eq: a }
+                - { is_mem: true }
+          - str_eq:
+              left: { current: 'instruction, operand2', lower: true, byte_at: 1 }
+              right: { const: 'w' }
       - instruction_in:
           mnemonics: [inc, dec]
           operands:
             - { eq: a }
       - all:
-          - { regex: LD_WRAM_STORE }
+          - all:
+              - instruction:
+                  mnemonic: ld
+                  operands:
+                    - { is_mem: true }
+                    - { eq: a }
+              - str_eq:
+                  left: { current: 'instruction, operand1', lower: true, byte_at: 1 }
+                  right: { const: 'w' }
           - str_eq:
               left:
                 current: code
@@ -1518,58 +2059,22 @@ patterns:
       - regex: TEXT_TRAILING_SPACE
       - not: { regex: TEXT_COMMAND_FOLLOWS }
 
-  no_op_add_sub:
-    name: No-op add|sub
-    description: "Bad: add|sub 0. Good: omit (unless you need the flag effects)"
-    steps:
-      - any:
-          - instruction:
-              mnemonic: add
-              operands:
-                - { is_zero_literal: true }
-          - instruction:
-              mnemonic: sub
-              operands:
-                - { is_zero_literal: true }
-          - instruction:
-              mnemonic: add
-              operands:
-                - { eq: a }
-                - { is_zero_literal: true }
-          - instruction:
-              mnemonic: sub
-              operands:
-                - { eq: a }
-                - { is_zero_literal: true }
-
-  ld_a_from_hli:
-    name: Load a from [hli]/[hl+]
-    description: "Load a from [hli]/[hl+]"
-    steps:
-      - instruction:
-          mnemonic: ld
-          operands:
-            - { eq: a }
-            - { canon_eq: '[hli]' }
-
 packs:
   core:
     patterns:
       - py_no_op_ld
-      - no_op_add_sub
-      - ld_a_from_hli
+      - py_no_op_add_sub
 
   rgbds:
     patterns:
       - py_redundant_arguments
       - py_nops
       - py_no_op_ld
-      - no_op_add_sub
+      - py_no_op_add_sub
       - py_a_eq_0
       - py_a_inc_dec
       - py_a_times_2
       - py_a_not
-      - ld_a_from_hli
 
   pret:
     patterns:
