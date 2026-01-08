@@ -1020,6 +1020,7 @@ pub enum StringField {
     InstructionMnemonic,
     InstructionOperand { idx: usize },
     InstructionCc,
+    InstructionCcOrEmpty,
     InstructionRoot,
 }
 
@@ -1161,6 +1162,10 @@ impl StringField {
             StringField::InstructionCc => {
                 let ins = parse_instruction(&line.code)?;
                 instruction_cc_operand(&ins).map(|s| s.to_string())
+            }
+            StringField::InstructionCcOrEmpty => {
+                let ins = parse_instruction(&line.code)?;
+                Some(instruction_cc_operand(&ins).unwrap_or("").to_string())
             }
             StringField::InstructionRoot => {
                 let ins = parse_instruction(&line.code)?;

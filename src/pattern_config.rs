@@ -367,6 +367,10 @@ fn parse_string_field(s: &str) -> Result<crate::StringField, ConfigError> {
                 return Ok(crate::StringField::InstructionCc);
             }
 
+            if selector == "cc_or_empty" {
+                return Ok(crate::StringField::InstructionCcOrEmpty);
+            }
+
             if matches!(selector.as_str(), "root" | "target") {
                 return Ok(crate::StringField::InstructionRoot);
             }

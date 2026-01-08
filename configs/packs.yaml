@@ -259,22 +259,27 @@ conditions:
             - { any_operand: true }
       - all:
           - code_in: ['xor a', 'xor a, a']
-          - any:
-              - str_eq:
-                  left: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true }
-                  right: { const: 'a' }
-              - str_eq:
-                  left: { prev: { idx: 1, field: code }, after_prefix: 'ldh ', before_comma: true, trim: true }
-                  right: { const: 'a' }
+          - str_eq:
+              left: { prev: { idx: 1, field: 'instruction, operand1' }, lower: true, trim: true }
+              right: { const: 'a' }
 
   reg_conditional_ternary_step6:
     any:
       - str_eq:
-          left: { current: code }
-          right: { prev: { idx: 2, field: code } }
-      - str_eq:
-          left: { current: code, strip_trailing_colon: true }
-          right: { prev: { idx: 2, field: code }, last_token: true }
+          left: { current: label }
+          right: { prev: { idx: 2, field: 'instruction, operand1' }, trim: true }
+      - all:
+          - instruction_in:
+              mnemonics: [jr, jp, jmp]
+              has_cc: false
+              operands:
+                - { any_operand: true }
+          - str_eq:
+              left: { current: 'instruction, mnemonic', lower: true }
+              right: { prev: { idx: 2, field: 'instruction, mnemonic' }, lower: true }
+          - str_eq:
+              left: { current: 'instruction, root', trim: true }
+              right: { prev: { idx: 2, field: 'instruction, root' }, trim: true }
 
   pair_eq_deref_foo_step3:
     all:
