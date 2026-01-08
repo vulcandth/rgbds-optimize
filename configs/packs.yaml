@@ -433,85 +433,124 @@ patterns:
     name: a++|a-- if carry
     description: "Bad: jr nc, .ok / { inc|dec a }+ / .ok. Good: adc|sbc 0"
     steps:
-      - regex: JUMP_NC
-      - code_in: ['inc a', 'dec a']
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          has_cc: true
+          cc_eq: nc
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: a }
       - rewind: 1
         when:
           str_eq:
-            left: { current: code, strip_trailing_colon: true }
+            left: { current: label }
             right:
-              prev: { idx: 0, field: code }
-              after_comma: true
-              trim: true
+              prev: { idx: 0, field: 'instruction, operand1' }
 
   py_a_inc_dec_if_not_carry:
     name: a++|a-- if not carry
     description: "Bad: jr c, .ok / { inc|dec a }+ / .ok. Good: adc|sbc -1"
     steps:
-      - regex: JUMP_C
-      - code_in: ['inc a', 'dec a']
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          cc_eq: c
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: a }
       - rewind: 1
         when:
           str_eq:
-            left: { current: code, strip_trailing_colon: true }
+            left: { current: label }
             right:
-              prev: { idx: 0, field: code }
-              after_comma: true
-              trim: true
+              prev: { idx: 0, field: 'instruction, operand1' }
 
   py_a_shift_right_3:
     name: a = a >> 3
     description: "Bad: srl a / srl a / srl a. Good: rrca / rrca / rrca / and %00011111"
     steps:
-      - regex: SRL_A
-      - regex: SRL_A
-      - regex: SRL_A
+      - instruction: srl
+        operands:
+          - { eq: a }
+      - instruction: srl
+        operands:
+          - { eq: a }
+      - instruction: srl
+        operands:
+          - { eq: a }
 
   py_a_eq_x_plusminus_carry:
     name: a = X +/- carry
     description: "Bad: ld b, a / ld a, c|N / adc|sbc 0. Good: ld b, a / adc|sbc c|N / sub|add b"
     steps:
-      - regex: LD_DST_A
       - all:
-          - { code_starts_with: 'ld a,' }
-          - any:
-              - not: { code_starts_with: 'ld a, [' }
-              - { code_eq: 'ld a, [hl]' }
-      - regex: ADC_SBC_0
+          - instruction: ld
+            operands:
+              - { any_operand: true }
+              - { eq: a }
+          - str_eq_in:
+              left: { current: 'instruction, operand1', lower: true }
+              rights: ['b', 'c', 'd', 'e', 'h', 'l', '[hl]']
+      - any:
+          - instruction: ld
+            operands:
+              - { eq: a }
+              - { is_mem: false }
+          - instruction: ld
+            operands:
+              - { eq: a }
+              - { is_mem_hl: true }
+      - instruction_in:
+          mnemonics: [adc, sbc]
+          operands:
+            - { is_zero_literal: true }
 
   py_a_eq_carry_plusminus_x:
     name: a = carry +/- X
     description: "Bad: ld b, a / ld a, 0 / adc|sbc c|N. Good: ld b, a / adc|sbc c|N / sub|add b"
     steps:
-      - regex: LD_DST_A
-      - regex: LD_A_0
-      - any:
-          - all:
-              - code_starts_with: 'adc '
-              - any:
-                  - not: { code_starts_with: 'adc [' }
-                  - code_eq: 'adc [hl]'
-          - all:
-              - code_starts_with: 'sbc '
-              - any:
-                  - not: { code_starts_with: 'sbc [' }
-                  - code_eq: 'sbc [hl]'
+      - all:
+          - instruction: ld
+            operands:
+              - { any_operand: true }
+              - { eq: a }
+          - str_eq_in:
+              left: { current: 'instruction, operand1', lower: true }
+              rights: ['b', 'c', 'd', 'e', 'h', 'l', '[hl]']
+      - instruction: ld
+        operands:
+          - { eq: a }
+          - { is_zero_literal: true }
+      - instruction_in:
+          mnemonics: [adc, sbc]
+          operands:
+            - any:
+                - { is_mem: false }
+                - { is_mem_hl: true }
 
   py_reg_conditional_ternary:
     name: 'a|b|c|d|e|h|l = z|nz|c|nc ? P : Q'
     description: "Bad: jr z|nz|c|nc, .p / ld a|b|c|d|e|h|l, Q / jr .ok / .p / (ld a|b|c|d|e|h|l, P | xor a) / (.ok | jr .ok). Good: ld a|b|c|d|e|h|l, Q / jr nz|z|nc|c, .ok / .p / (ld a|b|c|d|e|h|l, P | xor a) / .ok"
     steps:
-      - regex: JUMP_NZ_OR_ZC
-      - regex: LDH_R
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          has_cc: true
+      - instruction_in:
+          mnemonics: [ld, ldh]
+          operands:
+            - { is_reg8: true }
+            - { any_operand: true }
       - all:
-          - { regex: JR_JP_JMP_ANY }
-          - not: { code_contains: ',' }
-          - { code_ne: 'jp hl' }
+          - instruction_in:
+              mnemonics: [jr, jp, jmp]
+              has_cc: false
+              operands:
+                - { ne: hl }
       - str_eq:
-          left: { current: code, strip_trailing_colon: true }
+          left: { current: label }
           right:
-            prev: { idx: 0, field: code }
-            after_comma: true
+            prev: { idx: 0, field: 'instruction, operand1' }
             trim: true
       - reg_conditional_ternary_step5
       - reg_conditional_ternary_step6
@@ -590,9 +629,16 @@ patterns:
       - all:
           - regex: LD_LCE_A
           - pair_add_step2
-      - regex: JUMP_NC
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          has_cc: true
+          cc_eq: nc
+          operands:
+            - { any_operand: true }
       - all:
-          - code_starts_with: 'inc '
+          - instruction: inc
+            operands:
+              - { any_operand: true }
           - pair_add_jump_step4
       - str_eq:
           left: { current: code, strip_trailing_colon: true }
@@ -761,8 +807,12 @@ patterns:
     name: hl *= 2
     description: "Bad: sla l / rl h. Good: add hl, hl"
     steps:
-      - code_eq: 'sla l'
-      - code_eq: 'rl h'
+      - instruction: sla
+        operands:
+          - { eq: l }
+      - instruction: rl
+        operands:
+          - { eq: h }
 
   py_pair_eq_deref_foo:
     name: hl = *Foo
@@ -815,52 +865,106 @@ patterns:
     name: '*hl = N'
     description: "Bad: ld a, N / ld [hl], a (unless you need N in a too). Good: ld [hl], N"
     steps:
-      - regex: LD_A_IMM
-      - code_eq: 'ld [hl], a'
+      - instruction: ld
+        operands:
+          - { eq: a }
+          - { is_imm: true }
+      - instruction: ld
+        operands:
+          - { is_mem_hl: true }
+          - { eq: a }
 
   py_deref_hl_inc_dec:
     name: '*hl++|*hl--'
     description: "Bad: ld a, [hl] / { inc|dec a }+ / ld [hl], a. Good: inc|dec [hl] (before ld a, [hl] if you need [hl] in a too)"
     steps:
-      - code_eq: 'ld a, [hl]'
-      - code_in: ['inc a', 'dec a']
+      - instruction: ld
+        operands:
+          - { eq: a }
+          - { is_mem_hl: true }
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: a }
       - rewind: 1
-        when: { code_eq: 'ld [hl], a' }
+        when:
+          instruction: ld
+          operands:
+            - { is_mem_hl: true }
+            - { eq: a }
 
   py_deref_hl_inc_dec_eq_a:
     name: '*hl++|*hl-- = a'
     description: "Bad: ld [hl], a / inc|dec hl. Good: ld [hli|hld], a"
     steps:
-      - code_eq: 'ld [hl], a'
-      - code_in: ['inc hl', 'dec hl']
+      - instruction: ld
+        operands:
+          - { is_mem_hl: true }
+          - { eq: a }
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: hl }
 
   py_deref_hl_inc_dec_eq_n:
     name: '*hl++|*hl-- = N'
     description: "Bad: ld [hl], N / inc|dec hl (unless you can't use a). Good: ld a, N / ld [hli|hld], a"
     steps:
-      - regex: LD_MEMHL_IMM
-      - code_in: ['inc hl', 'dec hl']
+      - instruction: ld
+        operands:
+          - { is_mem_hl: true }
+          - { is_imm: true }
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: hl }
 
   py_a_eq_deref_hl_inc_dec:
     name: 'a = *hl++|*hl--'
     description: "Bad: ld a, [hl] / inc|dec hl. Good: ld a, [hli|hld]"
     steps:
-      - code_eq: 'ld a, [hl]'
-      - code_in: ['inc hl', 'dec hl']
+      - instruction: ld
+        operands:
+          - { eq: a }
+          - { is_mem_hl: true }
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: hl }
 
   py_deref_hl_inc_dec_eq_r:
     name: '*hl++|*hl-- = b|c|d|e'
     description: "Bad: ld [hl], b|c|d|e|h|l / inc|dec hl (unless you can't use a). Good: ld a, b|c|d|e|h|l / ld [hli|hld], a"
     steps:
-      - regex: LD_MEMHL_R
-      - code_in: ['inc hl', 'dec hl']
+      - all:
+          - instruction: ld
+            operands:
+              - { is_mem_hl: true }
+              - { is_reg8: true }
+          - str_eq_in:
+              left: { current: 'instruction, operand2', lower: true }
+              rights: ['b', 'c', 'd', 'e', 'h', 'l']
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: hl }
 
   py_r_eq_deref_hl_inc_dec:
     name: 'b|c|d|e = *hl++|*hl--'
     description: "Bad: ld b|c|d|e, [hl] / inc|dec hl (unless you can't use a). Good: ld a, [hli|hld] / ld b|c|d|e, a"
     steps:
-      - regex: LD_R_MEMHL
-      - code_in: ['inc hl', 'dec hl']
+      - all:
+          - instruction: ld
+            operands:
+              - { is_reg8: true }
+              - { is_mem_hl: true }
+          - str_eq_in:
+              left: { current: 'instruction, operand1', lower: true }
+              rights: ['b', 'c', 'd', 'e']
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: hl }
 
   py_a_eq_0_cmp:
     name: a == 0
@@ -878,103 +982,140 @@ patterns:
     name: ei + ret
     description: "Bad: ei / ret. Good: reti"
     steps:
-      - code_eq: ei
-      - code_eq: ret
+      - instruction: ei
+      - instruction:
+          mnemonic: ret
+          has_cc: false
 
   py_tail_call:
     name: Tail call
     description: "Bad: call Foo / ret (unless Foo messes with the stack). Good: jr|jp Foo"
     steps:
-      - all:
-          - { code_starts_with: 'call ' }
-          - not: { code_contains: ',' }
-      - code_eq: ret
+      - instruction:
+          mnemonic: call
+          has_cc: false
+          operands:
+            - { any_operand: true }
+      - instruction:
+          mnemonic: ret
+          has_cc: false
 
   py_tail_farcall:
     name: Tail farcall
     description: "Bad: farcall Foo / ret (unless Foo messes with the stack). Good: farjp Foo"
     steps:
       - all:
-          - { code_starts_with: 'farcall ' }
+          - code_starts_with: farcall
           - not: { code_contains: ',' }
-      - code_eq: ret
+      - instruction:
+          mnemonic: ret
+          has_cc: false
 
   py_tail_predef:
     name: Tail predef
     description: "Bad: predef Foo / ret. Good: predef_jump Foo"
     steps:
-      - code_starts_with: 'predef '
-      - code_eq: ret
+      - code_starts_with: predef
+      - instruction:
+          mnemonic: ret
+          has_cc: false
 
   py_fallthrough:
     name: Fallthrough
     description: "Bad: call Foo / ret / Foo: .... Good: fall through to Foo: ..."
     steps:
-      - all:
-          - { code_starts_with: 'call ' }
-          - not: { code_contains: ',' }
-      - code_eq: ret
+      - instruction:
+          mnemonic: call
+          has_cc: false
+          operands:
+            - { any_operand: true }
+      - instruction:
+          mnemonic: ret
+          has_cc: false
       - str_eq:
           left: { current: code, strip_trailing_colon: true }
           right:
-            prev: { idx: 0, field: code }
-            after_prefix: 'call '
+            prev: { idx: 0, field: 'instruction, operand1' }
             trim: true
 
   py_conditional_call:
     name: Conditional call
     description: "Bad: jr z|nz|c|nc, .skip / call Foo / .skip. Good: call nz|z|nc|c, Foo. Bad: jr z|nz|c|nc, .ok / call Foo / jr .ok. Good: call nz|z|nc|c, Foo / jr .ok"
     steps:
-      - regex: JUMP_NZ_OR_ZC
-      - all:
-          - { code_starts_with: 'call ' }
-          - not: { code_contains: ',' }
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          has_cc: true
+          cc_in: [z, nz, c, nc]
+          operands:
+            - { any_operand: true }
+      - instruction:
+          mnemonic: call
+          has_cc: false
+          operands:
+            - { any_operand: true }
       - any:
           - all:
-              - { regex: JR_JP_JMP_ANY }
-              - not: { code_contains: ',' }
+              - instruction_in:
+                  mnemonics: [jr, jp, jmp]
+                  has_cc: false
+                  operands:
+                    - { any_operand: true }
               - str_eq:
                   left:
-                    current: code
-                    last_token: true
+                    current: 'instruction, operand1'
                   right:
-                    prev: { idx: 0, field: code }
-                    after_comma: true
+                    prev: { idx: 0, field: 'instruction, operand1' }
                     trim: true
           - str_eq:
               left: { current: code, strip_trailing_colon: true }
               right:
-                prev: { idx: 0, field: code }
-                after_comma: true
+                prev: { idx: 0, field: 'instruction, operand1' }
                 trim: true
 
   py_conditional_return:
     name: Conditional return
     description: "Bad: jr z|nz|c|nc, .skip / ret / .skip. Good: ret nz|z|nc|c .bar"
     steps:
-      - regex: JUMP_NZ_OR_ZC
-      - code_eq: ret
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          has_cc: true
+          cc_in: [z, nz, c, nc]
+          operands:
+            - { any_operand: true }
+      - instruction:
+          mnemonic: ret
+          has_cc: false
       - str_eq:
           left: { current: code, strip_trailing_colon: true }
           right:
-            prev: { idx: 0, field: code }
-            after_comma: true
+            prev: { idx: 0, field: 'instruction, operand1' }
             trim: true
 
   py_conditional_fallthrough:
     name: Conditional fallthrough
     description: "Bad: jr z|nz|c|nc, .foo / jr .bar / .foo: .... Good: jr nz|z|nc|c .bar / .foo: ..."
     steps:
-      - regex: JUMP_NZ_OR_ZC
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          has_cc: true
+          cc_in: [z, nz, c, nc]
+          operands:
+            - { any_operand: true }
       - all:
-          - { regex: JR_JP_JMP_ANY }
-          - not: { code_contains: ',' }
-          - { code_ne: 'jp hl' }
+          - instruction_in:
+              mnemonics: [jr, jp, jmp]
+              has_cc: false
+              operands:
+                - { any_operand: true }
+          - not:
+              instruction:
+                mnemonic: jp
+                operands:
+                  - { eq: hl }
       - str_eq:
           left: { current: code, strip_trailing_colon: true }
           right:
-            prev: { idx: 0, field: code }
-            after_comma: true
+            prev: { idx: 0, field: 'instruction, operand1' }
             trim: true
 
   py_call_hl:
@@ -984,7 +1125,13 @@ patterns:
       - regex: LD_BCDE_IMM_NOT_HBD
       - all:
           - any:
-              - code_in: ['push bc', 'push de']
+              - all:
+                  - instruction: push
+                    operands:
+                      - { is_reg16_stack: true }
+                  - str_eq_in:
+                      left: { current: 'instruction, operand1', lower: true }
+                      rights: ['bc', 'de']
           - str_eq:
               left:
                 current: code
@@ -995,12 +1142,13 @@ patterns:
                 after_prefix: 'ld '
                 before_comma: true
                 trim: true
-      - code_eq: 'jp hl'
+      - instruction: jp
+        operands:
+          - { eq: hl }
       - str_eq:
           left: { current: code, strip_trailing_colon: true }
           right:
-            prev: { idx: 0, field: code }
-            after_comma: true
+            prev: { idx: 0, field: 'instruction, operand2' }
             trim: true
 
   py_pointless_hli_hld:
@@ -1119,17 +1267,27 @@ patterns:
     name: Conditionally load 0
     description: "Bad: and|or X / jr|jp nz, .foo / ld P, 0. Good: and|or X / jr|jp nz, .foo / ld P, a (if possible)"
     steps:
-      - any:
-          - { code_starts_with: 'and ' }
-          - { code_starts_with: 'or ' }
-      - regex: JR_NZ
-      - regex: LD_ANY_0
+      - instruction_in:
+          mnemonics: [and, or]
+      - instruction_in:
+          mnemonics: [jr, jp, jmp]
+          has_cc: true
+          cc_eq: nz
+          operands:
+            - { any_operand: true }
+      - instruction: ld
+        operands:
+          - { any_operand: true }
+          - { is_zero_literal: true }
 
   py_inefficient_prefix_opcodes:
     name: Inefficient prefix opcodes
     description: "Bad: rl|rlc|rr|rrc a (unless you need the z flag set for 0). Good: rla|rlca|rra|rrca"
     steps:
-      - regex: PREFIX_A
+      - instruction_in:
+          mnemonics: [rl, rlc, rr, rrc]
+          operands:
+            - { eq: a }
 
   py_redundant_and_or:
     name: Redundant and|or
@@ -1315,7 +1473,9 @@ patterns:
     description: "Bad: call [z|nz|c|nc,] Foo / ... / Foo: / ret. Good: (do nothing). Bad: jr|jp [z|nz|c|nc,] Foo / ... / Foo: / ret. Good: ret [z|nz|c|nc]"
     steps:
       - label_definition_line
-      - code_eq: ret
+      - instruction:
+          mnemonic: ret
+          has_cc: false
 
   py_stub_jump:
     name: Stub jump
@@ -1323,15 +1483,21 @@ patterns:
     steps:
       - label_definition_line
       - all:
-          - { code_starts_with: 'jr ' }
-          - not: { code_contains: ',' }
+          - instruction:
+              mnemonic: jr
+              has_cc: false
+              operands:
+                - { any_operand: true }
 
   py_wram_inc_dec:
     name: Inefficient WRAM increment/decrement
     description: "Bad: ld a, [wFoo] / inc|dec a / ld [wFoo], a (unless hl needs to be preserved). Good: ld hl, wFoo / inc|dec [hl]"
     steps:
       - regex: LD_WRAM_LOAD
-      - code_in: ['inc a', 'dec a']
+      - instruction_in:
+          mnemonics: [inc, dec]
+          operands:
+            - { eq: a }
       - all:
           - { regex: LD_WRAM_STORE }
           - str_eq:

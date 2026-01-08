@@ -133,6 +133,7 @@ fn is_gbz80_mnemonic(mnemonic_lower: &str) -> bool {
             | "inc"
             | "jp"
             | "jr"
+            | "jmp"
             | "ld"
             | "ldh"
             | "nop"

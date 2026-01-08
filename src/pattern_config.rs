@@ -503,6 +503,10 @@ struct OperandYaml {
 
     #[serde(default)]
     canon_eq: Option<String>,
+    #[serde(default)]
+    ne: Option<String>,
+    #[serde(default)]
+    canon_ne: Option<String>,
 
     #[serde(default)]
     is_zero_literal: Option<bool>,
@@ -605,6 +609,8 @@ impl OperandYaml {
         let OperandYaml {
             eq,
             canon_eq,
+            ne,
+            canon_ne,
             is_zero_literal,
             lower: _lower,
             is_one_literal,
@@ -685,6 +691,16 @@ impl OperandYaml {
         }
         if let Some(canon_eq) = canon_eq {
             conds.push(crate::OperandCondition::CanonEq(canon_eq));
+        }
+        if let Some(ne) = ne {
+            conds.push(crate::OperandCondition::Not(Box::new(
+                crate::OperandCondition::Eq(ne),
+            )));
+        }
+        if let Some(canon_ne) = canon_ne {
+            conds.push(crate::OperandCondition::Not(Box::new(
+                crate::OperandCondition::CanonEq(canon_ne),
+            )));
         }
 
         fn push_bool(
@@ -1145,6 +1161,7 @@ pub fn run_pack_on_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse_instruction;
     use crate::preprocess_properties;
 
     #[test]
@@ -1334,5 +1351,46 @@ packs:
 
         assert_eq!(got[2].0, "Between 8 and 15");
         assert_eq!(got[2].1.len(), 3);
+    }
+
+    #[test]
+    fn operand_ne_field_parsed_and_matches() {
+        let yaml = r#"
+patterns:
+    not_hl_jump:
+        name: Not HL jump
+        steps:
+            - instruction_in:
+                    in: [jr, jp, jmp]
+                    has_cc: false
+                    operands:
+                        - { ne: hl }
+
+packs:
+    core:
+        patterns:
+            - not_hl_jump
+"#;
+
+        let pack = load_pattern_pack_yaml(yaml, "core").unwrap();
+        let lines = preprocess_properties("  jr Foo\n  jp hl\n  jmp Bar\n");
+        for l in &lines {
+            eprintln!("line parsed: {:?} -> {:?}", l.code, parse_instruction(&l.code));
+        }
+        let got = run_pack_on_lines("file.asm", &lines, &pack);
+
+        // Should match jr Foo and jmp Bar, but not jp hl
+        let mut found = None;
+        for (name, matches) in &got {
+            if name == "Not HL jump" {
+                found = Some(matches);
+                break;
+            }
+        }
+        let matches = found.expect("pattern Not HL jump not found");
+        eprintln!("got matches: {:?}", matches);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].lines[0].code, "jr Foo");
+        assert_eq!(matches[1].lines[0].code, "jmp Bar");
     }
 }

@@ -13,6 +13,7 @@ order between implementations.
 from __future__ import annotations
 
 import argparse
+import difflib
 import os
 import subprocess
 import sys
@@ -75,6 +76,65 @@ def normalize_newlines(b: bytes) -> bytes:
     return b.replace(b"\r\n", b"\n")
 
 
+def _unified_diff_text(
+    *,
+    a: bytes,
+    b: bytes,
+    fromfile: str,
+    tofile: str,
+    context_lines: int,
+) -> List[str]:
+    """Return a unified diff between two byte streams.
+
+    The diff is generated after UTF-8 decoding with replacement, since the
+    optimizer outputs are intended to be UTF-8 text.
+    """
+
+    a_text = a.decode("utf-8", errors="replace")
+    b_text = b.decode("utf-8", errors="replace")
+
+    a_lines = a_text.splitlines(keepends=True)
+    b_lines = b_text.splitlines(keepends=True)
+
+    return list(
+        difflib.unified_diff(
+            a_lines,
+            b_lines,
+            fromfile=fromfile,
+            tofile=tofile,
+            n=context_lines,
+        )
+    )
+
+
+def _print_diff(
+    *,
+    label: str,
+    a: bytes,
+    b: bytes,
+    context_lines: int,
+    max_lines: int | None,
+) -> None:
+    """Print a unified diff for an output stream if it differs."""
+
+    diff_lines = _unified_diff_text(
+        a=a,
+        b=b,
+        fromfile=f"python {label}",
+        tofile=f"rust {label}",
+        context_lines=context_lines,
+    )
+
+    if max_lines is not None and len(diff_lines) > max_lines:
+        sys.stderr.writelines(diff_lines[:max_lines])
+        sys.stderr.write(
+            f"\n(diff truncated: {max_lines} of {len(diff_lines)} lines)\n"
+        )
+        return
+
+    sys.stderr.writelines(diff_lines)
+
+
 def main(argv: Sequence[str]) -> int:
     """CLI entrypoint."""
 
@@ -101,6 +161,21 @@ def main(argv: Sequence[str]) -> int:
         default="release",
         choices=["dev", "release"],
         help="Cargo profile for running the Rust binary.",
+    )
+    parser.add_argument(
+        "--diff-context",
+        type=int,
+        default=3,
+        help="Number of context lines to show in unified diffs (default: 3).",
+    )
+    parser.add_argument(
+        "--diff-max-lines",
+        type=int,
+        default=2000,
+        help=(
+            "Maximum number of diff lines to print per stream (default: 2000). "
+            "Set to 0 for unlimited."
+        ),
     )
 
     args = parser.parse_args(list(argv))
@@ -154,22 +229,34 @@ def main(argv: Sequence[str]) -> int:
     py_err = normalize_newlines(py_err)
     rs_err = normalize_newlines(rs_err)
 
+    max_diff_lines: int | None
+    if args.diff_max_lines == 0:
+        max_diff_lines = None
+    else:
+        max_diff_lines = args.diff_max_lines
+
     ok = True
 
     if py_out != rs_out:
-        sys.stderr.write("stdout differs\n")
-        sys.stderr.write("--- python\n")
-        sys.stderr.write(py_out.decode("utf-8", errors="replace"))
-        sys.stderr.write("--- rust\n")
-        sys.stderr.write(rs_out.decode("utf-8", errors="replace"))
+        sys.stderr.write("stdout differs (unified diff)\n")
+        _print_diff(
+            label="stdout",
+            a=py_out,
+            b=rs_out,
+            context_lines=args.diff_context,
+            max_lines=max_diff_lines,
+        )
         ok = False
 
     if py_err != rs_err:
-        sys.stderr.write("stderr differs\n")
-        sys.stderr.write("--- python\n")
-        sys.stderr.write(py_err.decode("utf-8", errors="replace"))
-        sys.stderr.write("--- rust\n")
-        sys.stderr.write(rs_err.decode("utf-8", errors="replace"))
+        sys.stderr.write("stderr differs (unified diff)\n")
+        _print_diff(
+            label="stderr",
+            a=py_err,
+            b=rs_err,
+            context_lines=args.diff_context,
+            max_lines=max_diff_lines,
+        )
         ok = False
 
     if py_code != rs_code:
