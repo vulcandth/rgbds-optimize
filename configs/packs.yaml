@@ -2,89 +2,9 @@
 # This file is intentionally user-editable; regexes are compiled once at startup.
 
 regexes:
-  NO_OP_LD_PY: '^ld ([abcdehl]), \1$'
-  NO_OP_ADD_SUB: '^(?:add|sub) (?:a, )?(?:[%$&]?0+|FALSE)$'
-  INEFFICIENT_HRAM_LOAD: '^ld a, \[[hr][^l]'
-  INEFFICIENT_HRAM_STORE: '^ld \[[hr][^l]'
-  A_EQ_0: '^ld a, (?:[%$&]?0+|FALSE)$'
-  A_INC_DEC: '^(?:add|sub) (?:a, )?[%$&]?0*1$'
-  A_NOT: '^xor (?:255|-[%$&]?0*1|\$[Ff][Ff]|%11111111|&377)$'
-  LD_R_A: '^ld [bcdehl], a'
-  LD_A_IMM: '^ld a, [^afbcdehl\[]'
-  SUB_R: '^sub [bcdehl]'
-  JUMP_NC: '^(jr|jp|jmp) nc,'
-  JUMP_C: '^(jr|jp|jmp) c,'
-  JUMP_NC_OR_C: '^(jr|jp|jmp) n?c,'
-  JUMP_NZ_OR_ZC: '^(jr|jp|jmp) n?[zc],'
-  JR_JP_JMP_ANY: '^(jr|jp|jmp) '
-  SRL_A: '^srl a$'
-  LD_DST_A: '^ld ([bcdehl]|\[hl\]), a'
-  ADC_SBC_0: '^(adc|sbc) [%$&]?0+$'
-  LD_A_0: '^ld a, [%$&]?0+$'
-  AND_IMM: '^and (?:a, )?[^afbcdehl\[]'
-  CP_IMM: '^cp (?:a, )?[^afbcdehl\[]'
-  LD_RH_A: '^ld [bcdehl], a$'
-  LD_A_RH: '^ld a, [bcdehl]$'
-  OR_R: '^or (?:a, )?[bcdehl]$'
-  LDH_R: '^ldh? [abcdehl],'
-
-  ADD_A_LCE_OR_IMM: '^add (?:a, )?(?:[lce]|[^afbdh\[])'
-  LD_LCE_A: '^ld [lce], a'
-  LD_A_HBD_OR_0: '^ld a, (?:[hbd]|[%$&]?0+$)'
-  LD_A_BCDEHL_OR_0: '^ld a, (?:[bcdehl]|[%$&]?0+$)'
-  ADC_BCDEHL_OR_0: '^adc (?:[bcdehl]|[%$&]?0+$)'
-  SBC_BCDEHL_OR_0: '^sbc (?:[bcdehl]|[%$&]?0+$)'
-  ADC_HBD_OR_0: '^adc (?:[hbd]|[%$&]?0+$)'
-  LD_HBD_A: '^ld [hbd], a'
-  LD_HBD_0: '^ld [hbd], [%$&]?0+$'
-
-  LD_PAIR_IMM: '^ld (?:hl|bc|de), [^\[]'
-  ADD_LCE: '^add (?:a, )?(?:[lce])$'
-  ADC_HBD: '^adc (?:a, )?(?:[hbd])$'
-  SUB_LCE: '^sub (?:a, )?(?:[lce])$'
-  LD_A_MEM_NOT_HBD: '^ld a, \[[^hbd]'
-  LD_LH_A: '^ld [lh], a$'
-
-  LD_MEMHL_IMM: '^ld \[hl\], [^afbcdehl\[]'
-  LD_MEMHL_R: '^ld \[hl\], [bcdehl]$'
-  LD_R_MEMHL: '^ld [bcde], \[hl\]$'
-
-  LD_R_IMM: '^ld [bcdehl], [^afbcdehl\[]'
-  LD_HL_IMM: '^ld hl, [^\[]'
-  LD_BC_IMM: '^ld bc, [^\[]'
-  LD_HL_IMM_OR_POP_HL: '^(?:ld hl,|pop hl)'
-
-  POINTLESS_HLI_HLD_STEP1: '^(?:ld a, \[hl[-+id]\]|ld \[hl[-+id]\], a)$'
-  CONTROL_FLOW_PREFIX: '^(jr|jp|jmp|call|rst|ret|predef)'
-  WORD_HL: '.*\bhl\b'
-  POINTLESS_JUMPS_STEP1: '^(jr|jp|jmp|jump|sjump|jumpchannel|sound_jump) '
-
-  CP_OR_0_OR_AND_FF: '^(?:cp|or) [%$&]?0+$|^and (?:255|-1|\$[Ff][Ff]|%11111111|&377)$'
-  CP_1: '^cp [%$&]?0*1$'
-  JR_NZ: '^(jr|jp|jmp) nz,'
-  LD_ANY_0: '^ld .+, [%$&]?0+$'
-  LD_BCDE_IMM_NOT_HBD: '^ld (?:bc|de), [^hbd]'
-
-  PREFIX_A: '^(?:rl|rlc|rr|rrc) a$'
-  AND_OR_XOR: '^(?:and|or|xor) '
-  AND_OR_A: '^(?:and a|or a|and a, a|or a, a)$'
-  AFFECTS_ZC: '^(?:rlca|rrca|rla|rra|daa|pop af|add |adc |sub |sbc |and |or |xor |cp |rlc |rrc |rl |rr |sla |sra |swap |srl |ld hl, sp|ldhl sp)'
-
-  CALL_RST_ADDNTIMES: '^(?:call|rst) AddNTimes'
-  LD_WRAM_LOAD: '^ld a, \[w'
-  LD_WRAM_STORE: '^ld \[w.*?\], a'
   LABEL_DEFINITION_TEXT_START: '^[A-Za-z_\\.]'
   TEXT_TRAILING_SPACE: '^(?:text|next1?|line|page|para|cont|prompt)\s*"[^"]* "'
   TEXT_COMMAND_FOLLOWS: '^(?:text_|sound_|start_asm|deciram|interpret_data|limited_interpret_data|link_wait_button|current_day|stop_compressing_text)'
-
-  REPT_4_CI: '^(?i:rept 4)$'
-  ENDR_CI: '^(?i:endr)$'
-
-  LD_ANY_IMM_NOT_REG_OR_MEM: '^ld .+, [^afbcdehl\[]'
-
-  LOAD_SRC_IS_SINGLE_REG: '^ldh? [^,]+,\s*[afbcdehl]\s*$'
-
-  ADD_PAIR_THREE_STEP: '^add (?:hl|bc|de), (?!hl|bc|de)'
 
 conditions:
   is_ld_or_ldh:
@@ -126,30 +46,6 @@ conditions:
           - str_eq_in:
               left: { prev: { idx: 0, field: code }, byte_at: 3 }
               rights: ['d', 'e', 'D', 'E']
-
-  # In the 3-step pair-add pattern, ensure the `add` operands match the previously
-  # loaded pair registers.
-  pair_add_three_step_matches_prev_pairs:
-    all:
-      - all:
-          - instruction:
-              mnemonic: add
-              operands:
-                - any:
-                    - { eq: hl }
-                    - { eq: bc }
-                    - { eq: de }
-                - { any_operand: true }
-          - not:
-              str_eq_in:
-                left: { current: 'instruction, operand2', lower: true, trim: true }
-                rights: ['hl', 'bc', 'de']
-      - str_eq:
-          left: { current: code, byte_at: 4 }
-          right: { prev: { idx: 0, field: code }, byte_at: 3 }
-      - str_eq:
-          left: { current: code, byte_at: 8 }
-          right: { prev: { idx: 1, field: code }, byte_at: 3 }
 
   # Middle "..." line for pair patterns: must not be a label or control-flow, and
   # must not touch the active pair via memory/stack (push/pop/[hl], etc.).
@@ -211,85 +107,6 @@ conditions:
                 - str_eq_in:
                     left: { prev: { idx: 0, field: code }, after_prefix: 'add ', byte_at: 0 }
                     rights: ['l', 'c', 'e']
-
-  pair_add_step3:
-    any:
-      - all:
-          - str_eq_in:
-              left: { current: code, after_prefix: 'ld a, ', trim: true }
-              rights: ['h', 'b', 'd']
-          - str_eq:
-              left: { current: code, after_prefix: 'ld a, ', trim: true }
-              right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
-      - not:
-          str_eq_in:
-            left: { current: code, after_prefix: 'ld a, ', trim: true }
-            rights: ['h', 'b', 'd']
-
-  pair_add_step4:
-    any:
-      - all:
-          - str_eq_in:
-              left: { current: code, after_prefix: 'adc ', trim: true }
-              rights: ['h', 'b', 'd']
-          - str_eq:
-              left: { current: code, after_prefix: 'adc ', trim: true }
-              right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
-      - not:
-          str_eq_in:
-            left: { current: code, after_prefix: 'adc ', trim: true }
-            rights: ['h', 'b', 'd']
-
-  pair_add_step5:
-    str_eq:
-      left: { current: code, after_prefix: 'ld ', before_comma: true, trim: true }
-      right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
-
-  pair_add_jump_step4:
-    str_eq:
-      left: { current: code, after_prefix: 'inc ', trim: true }
-      right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
-
-  reg_conditional_ternary_step5:
-    any:
-      - instruction_in:
-          mnemonics: [ld, ldh]
-          operands:
-            - { is_reg8: true }
-            - { any_operand: true }
-      - all:
-          - code_in: ['xor a', 'xor a, a']
-          - str_eq:
-              left: { prev: { idx: 1, field: 'instruction, operand1' }, lower: true, trim: true }
-              right: { const: 'a' }
-
-  reg_conditional_ternary_step6:
-    any:
-      - str_eq:
-          left: { current: label }
-          right: { prev: { idx: 2, field: 'instruction, operand1' }, trim: true }
-      - all:
-          - instruction_in:
-              mnemonics: [jr, jp, jmp]
-              has_cc: false
-              operands:
-                - { any_operand: true }
-          - str_eq:
-              left: { current: 'instruction, mnemonic', lower: true }
-              right: { prev: { idx: 2, field: 'instruction, mnemonic' }, lower: true }
-          - str_eq:
-              left: { current: 'instruction, root', trim: true }
-              right: { prev: { idx: 2, field: 'instruction, root' }, trim: true }
-
-  pair_eq_deref_foo_step3:
-    all:
-      - not:
-          str_eq:
-            left: { prev: { idx: 0, field: code }, after_prefix: 'ld a, [', symbol_like: true }
-            right: { const: '' }
-      - str_eq:
-          left: { prev: { idx: 0, field: code }, after_prefix: 'ld a, [', symbol_like: true }
-          right: { current: code, after_prefix: 'ld a, [', symbol_like: true }
 
 patterns:
   py_redundant_arguments:
@@ -574,8 +391,33 @@ patterns:
           right:
             prev: { idx: 0, field: 'instruction, operand1' }
             trim: true
-      - reg_conditional_ternary_step5
-      - reg_conditional_ternary_step6
+      - any:
+          - instruction_in:
+              mnemonics: [ld, ldh]
+              operands:
+                - { is_reg8: true }
+                - { any_operand: true }
+          - all:
+              - code_in: ['xor a', 'xor a, a']
+              - str_eq:
+                  left: { prev: { idx: 1, field: 'instruction, operand1' }, lower: true, trim: true }
+                  right: { const: 'a' }
+      - any:
+          - str_eq:
+              left: { current: label }
+              right: { prev: { idx: 2, field: 'instruction, operand1' }, trim: true }
+          - all:
+              - instruction_in:
+                  mnemonics: [jr, jp, jmp]
+                  has_cc: false
+                  operands:
+                    - { any_operand: true }
+              - str_eq:
+                  left: { current: 'instruction, mnemonic', lower: true }
+                  right: { prev: { idx: 2, field: 'instruction, mnemonic' }, lower: true }
+              - str_eq:
+                  left: { current: 'instruction, root', trim: true }
+                  right: { prev: { idx: 2, field: 'instruction, root' }, trim: true }
 
   py_a_and_x_eq_x:
     name: a & X == X
@@ -690,7 +532,18 @@ patterns:
                     - { eq: b }
                     - { eq: d }
                     - { is_zero_literal: true }
-          - pair_add_step3
+          - any:
+              - all:
+                  - str_eq_in:
+                      left: { current: code, after_prefix: 'ld a, ', trim: true }
+                      rights: ['h', 'b', 'd']
+                  - str_eq:
+                      left: { current: code, after_prefix: 'ld a, ', trim: true }
+                      right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
+              - not:
+                  str_eq_in:
+                    left: { current: code, after_prefix: 'ld a, ', trim: true }
+                    rights: ['h', 'b', 'd']
       - all:
           - instruction:
               mnemonic: adc
@@ -700,7 +553,18 @@ patterns:
                     - { eq: b }
                     - { eq: d }
                     - { is_zero_literal: true }
-          - pair_add_step4
+          - any:
+              - all:
+                  - str_eq_in:
+                      left: { current: code, after_prefix: 'adc ', trim: true }
+                      rights: ['h', 'b', 'd']
+                  - str_eq:
+                      left: { current: code, after_prefix: 'adc ', trim: true }
+                      right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
+              - not:
+                  str_eq_in:
+                    left: { current: code, after_prefix: 'adc ', trim: true }
+                    rights: ['h', 'b', 'd']
       - all:
           - instruction:
               mnemonic: ld
@@ -710,7 +574,9 @@ patterns:
                     - { eq: b }
                     - { eq: d }
                 - { eq: a }
-          - pair_add_step5
+          - str_eq:
+              left: { current: code, after_prefix: 'ld ', before_comma: true, trim: true }
+              right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
 
   py_pair_add_a_or_n_jump:
     name: hl|bc|de += a|N (jump)
@@ -754,7 +620,9 @@ patterns:
           - instruction: inc
             operands:
               - { any_operand: true }
-          - pair_add_jump_step4
+          - str_eq:
+              left: { current: code, after_prefix: 'inc ', trim: true }
+              right: { prev: { idx: 1, field: code }, after_prefix: 'ld ', before_comma: true, trim: true, pair_reg: true }
       - str_eq:
           left: { current: code, strip_trailing_colon: true }
           right:
@@ -1145,7 +1013,14 @@ patterns:
                   str_eq_in:
                     left: { current: 'instruction, operand2', lower: true, byte_at: 1 }
                     rights: ['h', 'b', 'd']
-          - pair_eq_deref_foo_step3
+          - all:
+              - not:
+                  str_eq:
+                    left: { prev: { idx: 0, field: code }, after_prefix: 'ld a, [', symbol_like: true }
+                    right: { const: '' }
+              - str_eq:
+                  left: { prev: { idx: 0, field: code }, after_prefix: 'ld a, [', symbol_like: true }
+                  right: { current: code, after_prefix: 'ld a, [', symbol_like: true }
       - all:
           - instruction:
               mnemonic: ld
@@ -1926,7 +1801,27 @@ patterns:
                 - { eq: de }
             - { is_imm: true }
       - rewind: 1
-        when: pair_add_three_step_matches_prev_pairs
+        when:
+          all:
+            - all:
+                - instruction:
+                    mnemonic: add
+                    operands:
+                      - any:
+                          - { eq: hl }
+                          - { eq: bc }
+                          - { eq: de }
+                      - { any_operand: true }
+                - not:
+                    str_eq_in:
+                      left: { current: 'instruction, operand2', lower: true, trim: true }
+                      rights: ['hl', 'bc', 'de']
+            - str_eq:
+                left: { current: code, byte_at: 4 }
+                right: { prev: { idx: 0, field: code }, byte_at: 3 }
+            - str_eq:
+                left: { current: code, byte_at: 8 }
+                right: { prev: { idx: 1, field: code }, byte_at: 3 }
 
   py_dec_a_then_addntimes:
     name: dec a, then AddNTimes
